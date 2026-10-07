@@ -1,9 +1,21 @@
-# Package Managers
+# Package Managers & Dependencies
+node_modules
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
 bun.lock
 bun.lockb
+
+# SvelteKit & Build Artifacts
+/.svelte-kit
+/build
+/.output
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+!.env.test
 
 # Miscellaneous
 /static/
