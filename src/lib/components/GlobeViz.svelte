@@ -15,16 +15,19 @@
 
 	let { selectedClient, onSelectClient, worldTopology = null }: Props = $props();
 
-	const VIEW_W = 1120;
-	const VIEW_H = 520;
-	// Place center at Y=355 with radius 335 so ~3/4ths of the tilted globe is showcased
-	const GLOBE_CENTER: [number, number] = [560, 355];
-	const GLOBE_RADIUS = 335;
 	const DEFAULT_PHI = -22; // Tilt northern hemisphere toward viewer
 	const DEFAULT_GAMMA = -13; // Signature orbital axial tilt
 
 	let shellEl: HTMLDivElement | undefined = $state();
+	let viewportEl: HTMLDivElement | undefined = $state();
 	let canvasEl: HTMLCanvasElement | undefined = $state();
+
+	let viewW = $state(1120);
+	let viewH = $state(520);
+
+	// Dynamically compute radius and center from actual viewport dimensions so the globe is always a true circle
+	const globeRadius = $derived(Math.min(viewW * 0.42, viewH * 0.644));
+	const globeCenter = $derived<[number, number]>([viewW * 0.5, viewH * 0.5 + globeRadius * 0.283]);
 
 	let rotation = $state<[number, number, number]>([-18, DEFAULT_PHI, DEFAULT_GAMMA]);
 	let isDragging = $state(false);
@@ -61,7 +64,7 @@
 		}
 	};
 
-	const projection = d3.geoOrthographic().scale(GLOBE_RADIUS).translate(GLOBE_CENTER).clipAngle(90);
+	const projection = d3.geoOrthographic().clipAngle(90);
 
 	function isPointVisible(coords: [number, number], rot: [number, number, number]): boolean {
 		const viewCenter: [number, number] = [-rot[0], -rot[1]];
@@ -71,10 +74,14 @@
 	const projectedClients = $derived.by(() => {
 		const proj = d3
 			.geoOrthographic()
-			.scale(GLOBE_RADIUS)
-			.translate(GLOBE_CENTER)
+			.scale(globeRadius)
+			.translate(globeCenter)
 			.clipAngle(90)
 			.rotate(rotation);
+
+		const offsetScale = Math.max(0.52, Math.min(1, globeRadius / 335));
+		const edgePadX = viewW < 640 ? 64 : 96;
+		const edgePadY = viewW < 640 ? 26 : 34;
 
 		return CLIENTS.map((client) => {
 			const visible = isPointVisible(client.coordinates, rotation);
@@ -82,14 +89,16 @@
 			const x = pos ? pos[0] : 0;
 			const y = pos ? pos[1] : 0;
 			const [dx, dy] = client.labelOffset;
+			const rawBadgeX = x + dx * offsetScale;
+			const rawBadgeY = y + dy * offsetScale;
 
 			return {
 				client,
 				visible,
 				x,
 				y,
-				badgeX: x + dx,
-				badgeY: y + dy
+				badgeX: Math.max(edgePadX, Math.min(viewW - edgePadX, rawBadgeX)),
+				badgeY: Math.max(edgePadY, Math.min(viewH - edgePadY, rawBadgeY))
 			};
 		});
 	});
@@ -194,8 +203,21 @@
 		if (!ctx) return;
 
 		const dpr = Math.min(window.devicePixelRatio || 1, 2);
-		canvas.width = VIEW_W * dpr;
-		canvas.height = VIEW_H * dpr;
+
+		function syncCanvasSize() {
+			if (!viewportEl || !canvas) return;
+			const rect = viewportEl.getBoundingClientRect();
+			const nextW = Math.max(260, Math.round(rect.width));
+			const nextH = Math.max(240, Math.round(rect.height));
+			if (nextW !== viewW || nextH !== viewH || canvas.width !== Math.round(nextW * dpr)) {
+				viewW = nextW;
+				viewH = nextH;
+				canvas.width = Math.round(nextW * dpr);
+				canvas.height = Math.round(nextH * dpr);
+			}
+		}
+
+		syncCanvasSize();
 
 		// Theme palette cache so getComputedStyle is never called per animation frame
 		let palette = {
@@ -264,18 +286,21 @@
 			if (!ctx) return;
 			ctx.save();
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-			ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+			ctx.clearRect(0, 0, viewW, viewH);
 
-			projection.rotate(rotation);
+			const [cx, cy] = globeCenter;
+			const r = globeRadius;
+			const ringPad = Math.round(36 * (r / 335));
+			const atmoPad = Math.round(20 * (r / 335));
 
-			const [cx, cy] = GLOBE_CENTER;
+			projection.scale(r).translate([cx, cy]).rotate(rotation);
 
 			// 1. Tilted Orbital Ring Reference Behind Sphere
 			ctx.save();
 			ctx.translate(cx, cy);
 			ctx.rotate((DEFAULT_GAMMA * Math.PI) / 180);
 			ctx.beginPath();
-			ctx.ellipse(0, 0, GLOBE_RADIUS + 36, (GLOBE_RADIUS + 36) * 0.34, 0, 0, Math.PI * 2);
+			ctx.ellipse(0, 0, r + ringPad, (r + ringPad) * 0.34, 0, 0, Math.PI * 2);
 			ctx.strokeStyle = palette.borderSubtle;
 			ctx.lineWidth = 1;
 			ctx.setLineDash([4, 8]);
@@ -283,30 +308,23 @@
 			ctx.restore();
 
 			// 2. Atmospheric Rim Halo
-			const atmoGrad = ctx.createRadialGradient(
-				cx,
-				cy,
-				GLOBE_RADIUS * 0.82,
-				cx,
-				cy,
-				GLOBE_RADIUS + 20
-			);
+			const atmoGrad = ctx.createRadialGradient(cx, cy, r * 0.82, cx, cy, r + atmoPad);
 			atmoGrad.addColorStop(0, 'transparent');
 			atmoGrad.addColorStop(0.75, palette.borderSubtle);
 			atmoGrad.addColorStop(1, 'transparent');
 			ctx.beginPath();
-			ctx.arc(cx, cy, GLOBE_RADIUS + 20, 0, Math.PI * 2);
+			ctx.arc(cx, cy, r + atmoPad, 0, Math.PI * 2);
 			ctx.fillStyle = atmoGrad;
 			ctx.fill();
 
 			// 3. Sphere Base
 			const sphereGrad = ctx.createRadialGradient(
-				cx - GLOBE_RADIUS * 0.18,
-				cy - GLOBE_RADIUS * 0.35,
-				GLOBE_RADIUS * 0.08,
+				cx - r * 0.18,
+				cy - r * 0.35,
+				r * 0.08,
 				cx,
 				cy,
-				GLOBE_RADIUS
+				r
 			);
 			sphereGrad.addColorStop(0, palette.ocean);
 			sphereGrad.addColorStop(0.74, palette.ocean);
@@ -432,6 +450,15 @@
 			ctx.restore();
 		}
 
+		const resizeObserver = new ResizeObserver(() => {
+			syncCanvasSize();
+			drawFrame(performance.now());
+		});
+
+		if (viewportEl) {
+			resizeObserver.observe(viewportEl);
+		}
+
 		let rafId = 0;
 		let prevTime = performance.now();
 		let isVisibleInViewport = true;
@@ -499,6 +526,7 @@
 
 		return () => {
 			if (rafId) cancelAnimationFrame(rafId);
+			resizeObserver.disconnect();
 			themeObserver.disconnect();
 			visibilityObserver.disconnect();
 		};
@@ -535,6 +563,7 @@
 	<!-- Full-Width 3/4 Tilted D3 Wireframe Globe Viewport -->
 	<div
 		class="globe-viewport {isDragging ? 'is-dragging' : ''}"
+		bind:this={viewportEl}
 		onpointerdown={onPointerDown}
 		onpointermove={onPointerMove}
 		onpointerup={onPointerUp}
@@ -555,7 +584,7 @@
 						class="globe-client-pin {isSelected ? 'is-selected' : ''} {isHovered
 							? 'is-hovered'
 							: ''}"
-						style="left: {(item.badgeX / VIEW_W) * 100}%; top: {(item.badgeY / VIEW_H) * 100}%;"
+						style="left: {(item.badgeX / viewW) * 100}%; top: {(item.badgeY / viewH) * 100}%;"
 						onclick={(e) => handleClientClick(item.client, e)}
 						onmouseenter={() => (hoveredClient = item.client.id)}
 						onmouseleave={() => (hoveredClient = null)}
@@ -1010,27 +1039,63 @@
 	}
 
 	@media (max-width: 640px) {
-		.globe-viewport {
-			aspect-ratio: 4 / 3;
-			min-height: 360px;
-		}
-
-		.globe-client-pin {
-			padding: 0.36rem 0.62rem 0.36rem 0.4rem;
+		.globe-telemetry-bar {
+			padding: 0.55rem 0.85rem;
+			font-size: 0.62rem;
 			gap: 0.45rem;
 		}
 
+		.coord-readout {
+			display: none;
+		}
+
+		.globe-viewport {
+			aspect-ratio: 1 / 1;
+			min-height: 300px;
+			max-height: 380px;
+		}
+
+		.globe-client-pin {
+			padding: 0.32rem 0.58rem 0.32rem 0.36rem;
+			gap: 0.42rem;
+		}
+
 		.pin-logo-box {
-			width: 26px;
-			height: 26px;
+			width: 25px;
+			height: 25px;
 		}
 
 		.pin-name {
-			font-size: 0.75rem;
+			font-size: 0.72rem;
 		}
 
 		.pin-city {
-			font-size: 0.6rem;
+			font-size: 0.58rem;
+		}
+
+		.selected-client-card {
+			bottom: 10px;
+			left: 10px;
+			width: calc(100% - 20px);
+			padding: 0.65rem 0.78rem;
+		}
+
+		.detail-logo-wrap {
+			width: 32px;
+			height: 32px;
+			padding: 4px;
+		}
+
+		.detail-company {
+			font-size: 0.84rem;
+		}
+
+		.detail-roles {
+			font-size: 0.74rem;
+		}
+
+		.detail-meta-row {
+			font-size: 0.62rem;
 		}
 
 		.globe-drag-hint {

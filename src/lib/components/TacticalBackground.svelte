@@ -160,17 +160,29 @@
 			}
 
 			if (bgLayerEl) {
-				const bgTx = -smoothX * 30;
-				const bgTy = -smoothY * 30;
+				// Subtle continuous handheld "shaky cam" drift layered on top of cursor parallax
+				const tSec = now * 0.001;
+				const camShakeX =
+					Math.sin(tSec * 1.7) * 4.2 +
+					Math.cos(tSec * 3.1 + 1.3) * 2.1 +
+					Math.sin(tSec * 6.7 + 0.7) * 0.85;
+				const camShakeY =
+					Math.cos(tSec * 1.45 + 0.5) * 3.8 +
+					Math.sin(tSec * 2.85 + 2.1) * 1.9 +
+					Math.cos(tSec * 6.1 + 1.8) * 0.8;
+				const camRollDeg = Math.sin(tSec * 1.1 + 0.9) * 0.14 + Math.cos(tSec * 2.5 + 0.3) * 0.06;
+
+				const bgTx = -smoothX * 30 + camShakeX;
+				const bgTy = -smoothY * 30 + camShakeY;
 				const totalScale = scale * (1 + (Math.abs(smoothX) + Math.abs(smoothY)) * 0.01);
 
 				if (
-					Math.abs(bgTx - lastAppliedTx) > 0.04 ||
-					Math.abs(bgTy - lastAppliedTy) > 0.04 ||
+					Math.abs(bgTx - lastAppliedTx) > 0.03 ||
+					Math.abs(bgTy - lastAppliedTy) > 0.03 ||
 					isHunting ||
 					lastAppliedBlur > 0
 				) {
-					bgLayerEl.style.transform = `translate3d(${bgTx.toFixed(1)}px, ${bgTy.toFixed(1)}px, 0) scale(${totalScale.toFixed(4)})`;
+					bgLayerEl.style.transform = `translate3d(${bgTx.toFixed(2)}px, ${bgTy.toFixed(2)}px, 0) rotate(${camRollDeg.toFixed(3)}deg) scale(${totalScale.toFixed(4)})`;
 					lastAppliedTx = bgTx;
 					lastAppliedTy = bgTy;
 				}

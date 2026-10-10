@@ -86,6 +86,19 @@
 	);
 	const sliderThumbLeftPct = $derived(carouselScrollRatio * (100 - sliderThumbWidthPct));
 
+	// --- Technical Expertise Mobile/Narrow Carousel State ---
+	let expertiseTrackEl: HTMLDivElement | undefined = $state();
+	let expertiseSliderTrackEl: HTMLDivElement | undefined = $state();
+	let isDraggingExpertiseCarousel = $state(false);
+	let isDraggingExpertiseSlider = $state(false);
+	let expertiseScrollRatio = $state(0);
+
+	const hasExpertiseOverflow = $derived(EXPERTISE.length > cardsPerPage);
+	const expertiseThumbWidthPct = $derived(
+		Math.max(20, Math.min(100, (cardsPerPage / Math.max(1, EXPERTISE.length)) * 100))
+	);
+	const expertiseThumbLeftPct = $derived(expertiseScrollRatio * (100 - expertiseThumbWidthPct));
+
 	const currentYear = new Date().getFullYear();
 
 	function getDayNightEmoji(hour24: number): string {
@@ -161,6 +174,39 @@
 		const maxScroll = carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth;
 		carouselScrollRatio =
 			maxScroll > 1 ? Math.min(1, Math.max(0, carouselTrackEl.scrollLeft / maxScroll)) : 0;
+	}
+
+	function syncExpertiseScrollRatio() {
+		if (!expertiseTrackEl) return;
+		const maxScroll = expertiseTrackEl.scrollWidth - expertiseTrackEl.clientWidth;
+		expertiseScrollRatio =
+			maxScroll > 1 ? Math.min(1, Math.max(0, expertiseTrackEl.scrollLeft / maxScroll)) : 0;
+	}
+
+	function getClosestCardSnapLeft(
+		trackEl: HTMLElement,
+		cardSelector: string,
+		targetLeft: number
+	): number {
+		const maxScroll = Math.max(0, trackEl.scrollWidth - trackEl.clientWidth);
+		if (maxScroll <= 2) return 0;
+		const cards = Array.from(trackEl.querySelectorAll<HTMLElement>(cardSelector));
+		if (cards.length === 0) return Math.min(maxScroll, Math.max(0, targetLeft));
+
+		const baseOffset = cards[0].offsetLeft;
+		const clampedTarget = Math.min(maxScroll, Math.max(0, targetLeft));
+		let bestOffset = 0;
+		let minDiff = Infinity;
+
+		for (const card of cards) {
+			const offset = Math.min(maxScroll, Math.max(0, card.offsetLeft - baseOffset));
+			const diff = Math.abs(offset - clampedTarget);
+			if (diff < minDiff) {
+				minDiff = diff;
+				bestOffset = offset;
+			}
+		}
+		return bestOffset;
 	}
 
 	function handleSelectClient(clientId: ClientId | null) {
@@ -241,12 +287,12 @@
 		}
 
 		if (hasDraggedCarousel && carouselTrackEl) {
-			if (Math.abs(dragVelocityX) > 0.25) {
-				carouselTrackEl.scrollBy({
-					left: -dragVelocityX * 260,
-					behavior: 'smooth'
-				});
-			}
+			const projectedLeft = carouselTrackEl.scrollLeft - dragVelocityX * 220;
+			const snappedLeft = getClosestCardSnapLeft(carouselTrackEl, '.project-card', projectedLeft);
+			carouselTrackEl.scrollTo({
+				left: snappedLeft,
+				behavior: 'smooth'
+			});
 
 			window.setTimeout(() => {
 				suppressCardClick = false;
@@ -276,7 +322,7 @@
 		});
 	}
 
-	// --- Draggable Slider Line Handlers ---
+	// --- Draggable Slider Line Handlers (Projects) ---
 	let sliderGrabOffsetPx = 0;
 
 	function applySliderPointerPosition(clientX: number) {
@@ -358,6 +404,169 @@
 		carouselScrollRatio = nextRatio;
 		const maxScroll = Math.max(0, carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth);
 		carouselTrackEl.scrollTo({ left: nextRatio * maxScroll, behavior: 'smooth' });
+	}
+
+	// --- Pointer Drag & Slider Handlers for Expertise Mobile Carousel ---
+	let expDragStartX = 0;
+	let expDragLastX = 0;
+	let expDragLastTime = 0;
+	let expDragVelocityX = 0;
+	let expDragStartScrollLeft = 0;
+	let hasDraggedExpertise = false;
+	let expScrollSyncRaf = 0;
+	let expSliderGrabOffsetPx = 0;
+
+	function onExpertisePointerDown(e: PointerEvent) {
+		if (e.button !== 0 || !expertiseTrackEl || !hasExpertiseOverflow) return;
+		isDraggingExpertiseCarousel = true;
+		hasDraggedExpertise = false;
+		expDragStartX = e.clientX;
+		expDragLastX = e.clientX;
+		expDragLastTime = performance.now();
+		expDragVelocityX = 0;
+		expDragStartScrollLeft = expertiseTrackEl.scrollLeft;
+	}
+
+	function onExpertisePointerMove(e: PointerEvent) {
+		if (!isDraggingExpertiseCarousel || !expertiseTrackEl) return;
+		const dx = e.clientX - expDragStartX;
+
+		if (!hasDraggedExpertise && Math.abs(dx) > 6) {
+			hasDraggedExpertise = true;
+			try {
+				expertiseTrackEl.setPointerCapture(e.pointerId);
+			} catch {
+				// Ignore capture errors
+			}
+		}
+
+		if (hasDraggedExpertise) {
+			const now = performance.now();
+			const dt = Math.max(1, now - expDragLastTime);
+			expDragVelocityX = (e.clientX - expDragLastX) / dt;
+			expDragLastX = e.clientX;
+			expDragLastTime = now;
+
+			expertiseTrackEl.scrollLeft = expDragStartScrollLeft - dx;
+			syncExpertiseScrollRatio();
+		}
+	}
+
+	function onExpertisePointerUp(e: PointerEvent) {
+		if (!isDraggingExpertiseCarousel) return;
+		isDraggingExpertiseCarousel = false;
+
+		if (expertiseTrackEl) {
+			try {
+				if (expertiseTrackEl.hasPointerCapture(e.pointerId)) {
+					expertiseTrackEl.releasePointerCapture(e.pointerId);
+				}
+			} catch {
+				// Ignore release errors
+			}
+		}
+
+		if (hasDraggedExpertise && expertiseTrackEl) {
+			const projectedLeft = expertiseTrackEl.scrollLeft - expDragVelocityX * 200;
+			const snappedLeft = getClosestCardSnapLeft(
+				expertiseTrackEl,
+				'.expertise-card',
+				projectedLeft
+			);
+			expertiseTrackEl.scrollTo({
+				left: snappedLeft,
+				behavior: 'smooth'
+			});
+		}
+
+		hasDraggedExpertise = false;
+	}
+
+	function onExpertiseScroll() {
+		if (isDraggingExpertiseCarousel || isDraggingExpertiseSlider || expScrollSyncRaf) return;
+		expScrollSyncRaf = requestAnimationFrame(() => {
+			expScrollSyncRaf = 0;
+			if (!isDraggingExpertiseCarousel && !isDraggingExpertiseSlider) {
+				syncExpertiseScrollRatio();
+			}
+		});
+	}
+
+	function applyExpertiseSliderPosition(clientX: number) {
+		if (!expertiseSliderTrackEl || !expertiseTrackEl) return;
+		const rect = expertiseSliderTrackEl.getBoundingClientRect();
+		const trackW = Math.max(1, rect.width);
+		const thumbW = (expertiseThumbWidthPct / 100) * trackW;
+		const usableW = Math.max(1, trackW - thumbW);
+		const pointerX = clientX - rect.left;
+		const nextRatio = Math.min(1, Math.max(0, (pointerX - expSliderGrabOffsetPx) / usableW));
+		expertiseScrollRatio = nextRatio;
+		const maxScroll = Math.max(0, expertiseTrackEl.scrollWidth - expertiseTrackEl.clientWidth);
+		expertiseTrackEl.scrollLeft = nextRatio * maxScroll;
+	}
+
+	function onExpertiseSliderPointerDown(e: PointerEvent) {
+		if (e.button !== 0 || !expertiseSliderTrackEl || !expertiseTrackEl) return;
+		isDraggingExpertiseSlider = true;
+
+		const rect = expertiseSliderTrackEl.getBoundingClientRect();
+		const trackW = Math.max(1, rect.width);
+		const thumbW = (expertiseThumbWidthPct / 100) * trackW;
+		const usableW = Math.max(1, trackW - thumbW);
+		const pointerX = e.clientX - rect.left;
+		const currentThumbLeft = expertiseScrollRatio * usableW;
+
+		if (pointerX >= currentThumbLeft && pointerX <= currentThumbLeft + thumbW) {
+			expSliderGrabOffsetPx = pointerX - currentThumbLeft;
+		} else {
+			expSliderGrabOffsetPx = thumbW / 2;
+			applyExpertiseSliderPosition(e.clientX);
+		}
+
+		try {
+			expertiseSliderTrackEl.setPointerCapture(e.pointerId);
+		} catch {
+			// Ignore capture errors
+		}
+	}
+
+	function onExpertiseSliderPointerMove(e: PointerEvent) {
+		if (!isDraggingExpertiseSlider) return;
+		applyExpertiseSliderPosition(e.clientX);
+	}
+
+	function onExpertiseSliderPointerUp(e: PointerEvent) {
+		if (!isDraggingExpertiseSlider) return;
+		isDraggingExpertiseSlider = false;
+		if (expertiseSliderTrackEl) {
+			try {
+				if (expertiseSliderTrackEl.hasPointerCapture(e.pointerId)) {
+					expertiseSliderTrackEl.releasePointerCapture(e.pointerId);
+				}
+			} catch {
+				// Ignore release errors
+			}
+		}
+	}
+
+	function onExpertiseSliderKeyDown(e: KeyboardEvent) {
+		if (!expertiseTrackEl) return;
+		let nextRatio: number;
+		if (e.key === 'ArrowRight') {
+			nextRatio = Math.min(1, expertiseScrollRatio + 0.5);
+		} else if (e.key === 'ArrowLeft') {
+			nextRatio = Math.max(0, expertiseScrollRatio - 0.5);
+		} else if (e.key === 'Home') {
+			nextRatio = 0;
+		} else if (e.key === 'End') {
+			nextRatio = 1;
+		} else {
+			return;
+		}
+		e.preventDefault();
+		expertiseScrollRatio = nextRatio;
+		const maxScroll = Math.max(0, expertiseTrackEl.scrollWidth - expertiseTrackEl.clientWidth);
+		expertiseTrackEl.scrollTo({ left: nextRatio * maxScroll, behavior: 'smooth' });
 	}
 
 	onMount(() => {
@@ -473,6 +682,7 @@
 		function handleScrollOrResize() {
 			updateResponsiveCardsPerPage();
 			syncCarouselScrollRatio();
+			syncExpertiseScrollRatio();
 			const maxScroll = Math.max(
 				1,
 				document.documentElement.scrollHeight - document.documentElement.clientHeight - 2
@@ -509,11 +719,32 @@
 			const maxScroll = carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth;
 			if (maxScroll <= 4) return;
 
-			const step = carouselTrackEl.clientWidth * 0.85;
-			const nextLeft =
-				carouselTrackEl.scrollLeft >= maxScroll - 12
-					? 0
-					: Math.min(maxScroll, carouselTrackEl.scrollLeft + step);
+			const cards = Array.from(carouselTrackEl.querySelectorAll<HTMLElement>('.project-card'));
+			if (cards.length === 0) return;
+			const baseOffset = cards[0].offsetLeft;
+			const currentLeft = carouselTrackEl.scrollLeft;
+
+			let nextLeft = 0;
+			if (currentLeft < maxScroll - 8) {
+				let currentCardIdx = 0;
+				let minDiff = Infinity;
+				for (let i = 0; i < cards.length; i++) {
+					const offset = cards[i].offsetLeft - baseOffset;
+					const diff = Math.abs(offset - currentLeft);
+					if (diff < minDiff) {
+						minDiff = diff;
+						currentCardIdx = i;
+					}
+				}
+				const targetIdx = Math.min(
+					Math.max(0, cards.length - cardsPerPage),
+					currentCardIdx + cardsPerPage
+				);
+				nextLeft =
+					targetIdx > currentCardIdx
+						? Math.min(maxScroll, cards[targetIdx].offsetLeft - baseOffset)
+						: maxScroll;
+			}
 
 			lastCarouselInteractionTime = now;
 			carouselTrackEl.scrollTo({ left: nextLeft, behavior: 'smooth' });
@@ -561,6 +792,7 @@
 			window.removeEventListener('resize', handleScrollOrResize);
 			if (scrollRafId) cancelAnimationFrame(scrollRafId);
 			if (scrollSyncRaf) cancelAnimationFrame(scrollSyncRaf);
+			if (expScrollSyncRaf) cancelAnimationFrame(expScrollSyncRaf);
 			carouselObserver.disconnect();
 			navObserver.disconnect();
 		};
@@ -1040,39 +1272,76 @@
 			</div>
 		</div>
 
-		<div class="expertise-grid">
-			{#each EXPERTISE as domain (domain.id)}
-				<article class="expertise-card glass-surface tactical-frame">
-					<div class="expertise-card-top">
-						<span class="domain-code">{domain.code}</span>
-						<span class="domain-icon">
-							{#if domain.id === 'minecraft-bedrock'}
-								<Blocks size={18} />
-							{:else if domain.id === 'web'}
-								<Globe size={18} />
-							{:else}
-								<Brain size={18} />
-							{/if}
-						</span>
+		<div class="expertise-gallery-shell">
+			<div
+				class="expertise-carousel-viewport {isDraggingExpertiseCarousel ? 'is-dragging' : ''}"
+				bind:this={expertiseTrackEl}
+				onpointerdown={onExpertisePointerDown}
+				onpointermove={onExpertisePointerMove}
+				onpointerup={onExpertisePointerUp}
+				onpointercancel={onExpertisePointerUp}
+				onscroll={onExpertiseScroll}
+				role="region"
+				aria-label="Technical expertise domains"
+			>
+				{#each EXPERTISE as domain (domain.id)}
+					<article class="expertise-card glass-surface tactical-frame">
+						<div class="expertise-card-top">
+							<span class="domain-code">{domain.code}</span>
+							<span class="domain-icon">
+								{#if domain.id === 'minecraft-bedrock'}
+									<Blocks size={18} />
+								{:else if domain.id === 'web'}
+									<Globe size={18} />
+								{:else}
+									<Brain size={18} />
+								{/if}
+							</span>
+						</div>
+
+						<h3 class="domain-title">{domain.title}</h3>
+
+						<ul class="domain-skill-list">
+							{#each domain.items as skill (skill.name)}
+								<li class="skill-row">
+									<div class="skill-row-header">
+										<span class="skill-name">
+											<Sparkles size={12} class="skill-bullet" />
+											{skill.name}
+										</span>
+										<span class="skill-tag">{skill.tag}</span>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					</article>
+				{/each}
+			</div>
+
+			{#if hasExpertiseOverflow}
+				<div
+					class="carousel-slider-track {isDraggingExpertiseSlider ? 'is-dragging' : ''}"
+					bind:this={expertiseSliderTrackEl}
+					role="slider"
+					tabindex="0"
+					aria-label="Scroll technical expertise cards"
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={Math.round(expertiseScrollRatio * 100)}
+					onpointerdown={onExpertiseSliderPointerDown}
+					onpointermove={onExpertiseSliderPointerMove}
+					onpointerup={onExpertiseSliderPointerUp}
+					onpointercancel={onExpertiseSliderPointerUp}
+					onkeydown={onExpertiseSliderKeyDown}
+				>
+					<div class="slider-rail">
+						<div
+							class="slider-thumb"
+							style="width: {expertiseThumbWidthPct}%; left: {expertiseThumbLeftPct}%;"
+						></div>
 					</div>
-
-					<h3 class="domain-title">{domain.title}</h3>
-
-					<ul class="domain-skill-list">
-						{#each domain.items as skill (skill.name)}
-							<li class="skill-row">
-								<div class="skill-row-header">
-									<span class="skill-name">
-										<Sparkles size={12} class="skill-bullet" />
-										{skill.name}
-									</span>
-									<span class="skill-tag">{skill.tag}</span>
-								</div>
-							</li>
-						{/each}
-					</ul>
-				</article>
-			{/each}
+				</div>
+			{/if}
 		</div>
 	</section>
 
@@ -1248,6 +1517,7 @@
 		border: 1px solid transparent;
 		background: transparent;
 		color: var(--fg-primary);
+		flex-shrink: 0;
 		transition:
 			border-color 0.2s ease,
 			background-color 0.2s ease,
@@ -1272,17 +1542,12 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	@media (max-width: 640px) {
-		.logo-scroll-readout {
-			display: none;
-		}
-	}
-
 	/* Scrollspy Nav Container */
 	.navbar-links {
 		display: flex;
 		align-items: center;
 		gap: 0.3rem;
+		min-width: 0;
 	}
 
 	.nav-link {
@@ -1299,6 +1564,7 @@
 		color: var(--fg-primary);
 		opacity: 0.86;
 		border: 1px solid transparent;
+		white-space: nowrap;
 		transition:
 			opacity 0.2s ease,
 			color 0.2s ease,
@@ -1329,16 +1595,6 @@
 		color: var(--accent-text);
 	}
 
-	@media (max-width: 560px) {
-		.nav-idx {
-			display: none;
-		}
-		.nav-link {
-			padding: 0.38rem 0.52rem;
-			font-size: 0.72rem;
-		}
-	}
-
 	.theme-toggle-btn {
 		display: inline-flex;
 		align-items: center;
@@ -1352,6 +1608,7 @@
 		font-size: 0.72rem;
 		font-weight: 600;
 		letter-spacing: 0.08em;
+		flex-shrink: 0;
 		transition:
 			border-color 0.2s ease,
 			background-color 0.2s ease;
@@ -1362,9 +1619,60 @@
 		background: var(--accent-soft);
 	}
 
-	@media (max-width: 560px) {
+	@media (max-width: 640px) {
+		.top-navbar-wrapper {
+			padding: 0.55rem 0.65rem;
+		}
+
+		.top-navbar {
+			padding: 0.36rem 0.48rem;
+			gap: 0.25rem;
+			border-radius: 12px;
+		}
+
+		.navbar-logo-btn {
+			padding: 0.18rem 0.24rem;
+		}
+
+		.navbar-logo-btn :global(.animated-logo-root) {
+			width: 28px !important;
+			height: 28px !important;
+		}
+
+		.logo-scroll-readout {
+			display: none;
+		}
+
+		.navbar-links {
+			flex: 1;
+			justify-content: center;
+			gap: 0.12rem;
+		}
+
+		.nav-idx {
+			display: none;
+		}
+
+		.nav-link {
+			padding: 0.34rem 0.44rem;
+			font-size: 0.68rem;
+			letter-spacing: 0.01em;
+			border-radius: 6px;
+		}
+
+		.theme-toggle-btn {
+			padding: 0.38rem;
+		}
+
 		.theme-label {
 			display: none;
+		}
+	}
+
+	@media (max-width: 380px) {
+		.nav-link {
+			padding: 0.3rem 0.32rem;
+			font-size: 0.62rem;
 		}
 	}
 
@@ -1551,20 +1859,24 @@
 		gap: 0.45rem;
 		padding: 0.72rem 1.25rem;
 		border-radius: 10px;
-		background: var(--accent);
-		color: var(--accent-ink);
+		background: var(--accent-soft);
+		border: 1px solid var(--accent-border);
+		color: var(--fg-primary);
 		font-family: var(--font-display);
 		font-size: 0.88rem;
 		font-weight: 700;
 		text-decoration: none;
 		transition:
 			transform 0.18s ease,
+			border-color 0.2s ease,
+			background-color 0.2s ease,
 			box-shadow 0.2s ease;
 	}
 
 	.btn-primary:hover {
 		transform: translateY(-2px);
-		box-shadow: 0 8px 24px -4px var(--accent-glow);
+		border-color: var(--accent);
+		box-shadow: 0 8px 24px -6px var(--accent-glow);
 	}
 
 	.btn-secondary {
@@ -1708,10 +2020,9 @@
 	}
 
 	.filter-chip.is-active {
-		background: var(--accent);
-		color: var(--accent-ink);
-		border-color: var(--accent);
-		box-shadow: 0 0 18px -4px var(--accent-glow);
+		color: var(--fg-primary);
+		background: var(--accent-soft);
+		border-color: var(--accent-border);
 	}
 
 	.chip-logo {
@@ -1750,7 +2061,12 @@
 		background: oklch(0% 0 0 / 0.15);
 	}
 
-	/* --- Drag/Swipe Projects Carousel Gallery & Paginated Dots --- */
+	.filter-chip.is-active .chip-count {
+		color: var(--accent-text);
+		background: var(--bg-surface);
+	}
+
+	/* --- Drag/Swipe Projects Carousel Gallery & Slider Line --- */
 	.projects-gallery-shell {
 		display: flex;
 		flex-direction: column;
@@ -1763,7 +2079,7 @@
 		align-items: stretch;
 		gap: 1.25rem;
 		overflow-x: auto;
-		padding: 0.3rem 0.05rem 0.4rem;
+		padding: 0.3rem 0 0.4rem;
 		user-select: none;
 		touch-action: pan-y;
 		scrollbar-width: none;
@@ -2029,24 +2345,50 @@
 	}
 
 	/* --- Section 03: #expertise --- */
-	.expertise-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1.25rem;
+	.expertise-gallery-shell {
+		display: flex;
+		flex-direction: column;
+		gap: 1.15rem;
 	}
 
-	@media (max-width: 960px) {
-		.expertise-grid {
-			grid-template-columns: 1fr;
-		}
+	.expertise-carousel-viewport {
+		position: relative;
+		display: flex;
+		align-items: stretch;
+		gap: 1.25rem;
+		overflow-x: auto;
+		padding: 0.2rem 0 0.3rem;
+		user-select: none;
+		touch-action: pan-y;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.expertise-carousel-viewport::-webkit-scrollbar {
+		display: none;
 	}
 
 	.expertise-card {
+		flex: 0 0 calc((100% - 2.5rem) / 3);
+		min-width: 0;
 		border-radius: 16px;
 		padding: 1.5rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
+	}
+
+	@media (max-width: 960px) {
+		.expertise-card {
+			flex: 0 0 calc((100% - 1.25rem) / 2);
+		}
+	}
+
+	@media (max-width: 640px) {
+		.expertise-card {
+			flex: 0 0 100%;
+			padding: 1.2rem;
+		}
 	}
 
 	.expertise-card-top {
@@ -2289,5 +2631,112 @@
 	.footer-top-link:hover {
 		border-color: var(--accent);
 		background: var(--accent-soft);
+	}
+
+	/* --- Mobile Layout Refinements across Sections --- */
+	@media (max-width: 640px) {
+		.page-foreground-plane {
+			padding: 4.85rem 0.85rem 2.25rem;
+			gap: 3.5rem;
+		}
+
+		.intro-section {
+			min-height: auto;
+		}
+
+		.section-hud-strip {
+			padding: 0.6rem 0.95rem;
+			font-size: 0.6rem;
+		}
+
+		.intro-body {
+			padding: 1.35rem 1.1rem;
+			gap: 1.15rem;
+		}
+
+		.timezone-pill {
+			padding: 0.55rem 0.8rem;
+			font-size: 0.74rem;
+		}
+
+		.intro-metrics {
+			width: 100%;
+			justify-content: space-between;
+			gap: 0.5rem;
+		}
+
+		.metric-val {
+			font-size: 1rem;
+		}
+
+		.metric-lbl {
+			font-size: 0.58rem;
+		}
+
+		.client-filter-bar {
+			padding: 0.65rem 0.85rem;
+			gap: 0.6rem;
+		}
+
+		.filter-chip {
+			padding: 0.38rem 0.68rem;
+			font-size: 0.73rem;
+		}
+
+		.connect-shell {
+			padding: 1.25rem 1rem;
+			gap: 1.1rem;
+		}
+
+		.connect-title {
+			font-size: 1.65rem;
+		}
+
+		.connect-subtitle {
+			font-size: 0.84rem;
+		}
+
+		.connect-channels-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.55rem;
+		}
+
+		.channel-card {
+			padding: 0.6rem 0.7rem;
+			border-radius: 10px;
+			gap: 0;
+		}
+
+		.channel-card::before,
+		.channel-card::after {
+			display: none;
+		}
+
+		.channel-top {
+			display: none;
+		}
+
+		.channel-main {
+			gap: 0.55rem;
+		}
+
+		.channel-icon-box {
+			width: 30px;
+			height: 30px;
+			border-radius: 7px;
+		}
+
+		.channel-name {
+			font-size: 0.84rem;
+		}
+
+		.channel-handle {
+			display: none;
+		}
+
+		.footer-inner {
+			padding: 0.85rem 1rem;
+			font-size: 0.68rem;
+		}
 	}
 </style>
