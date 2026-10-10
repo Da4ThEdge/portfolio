@@ -1,0 +1,212 @@
+:root,
+html[data-theme='dark'] {
+	--bg-base: oklch(14% 0.005 285.823);
+	--bg-surface: oklch(17% 0.005 285.823);
+	--bg-glass: oklch(16% 0.005 285.823 / 0.54);
+	--bg-glass-hover: oklch(19% 0.005 285.823 / 0.68);
+	--bg-glass-strong: oklch(15% 0.005 285.823 / 0.84);
+	--bg-chip: oklch(100% 0 0 / 0.05);
+	--bg-chip-hover: oklch(100% 0 0 / 0.1);
+
+	--fg-primary: oklch(96% 0 0);
+	--fg-secondary: oklch(74% 0.004 285.823);
+	--fg-muted: oklch(54% 0.004 285.823);
+	--fg-inverse: oklch(14% 0.005 285.823);
+
+	--border-hairline: oklch(100% 0 0 / 0.08);
+	--border-subtle: oklch(100% 0 0 / 0.13);
+	--border-strong: oklch(100% 0 0 / 0.26);
+
+	--accent: oklch(91% 0.096 180.426);
+	--accent-glow: oklch(91% 0.096 180.426 / 0.35);
+	--accent-soft: oklch(91% 0.096 180.426 / 0.14);
+	--accent-border: oklch(91% 0.096 180.426 / 0.55);
+	--accent-text: oklch(91% 0.096 180.426);
+	--accent-ink: oklch(14% 0.005 285.823);
+
+	--grid-line: oklch(100% 0 0 / 0.042);
+	--grid-dot: oklch(100% 0 0 / 0.12);
+	--hud-stroke: oklch(100% 0 0 / 0.36);
+	--hud-text: oklch(100% 0 0 / 0.52);
+
+	--shadow-glass:
+		0 24px 64px -12px oklch(0% 0 0 / 0.65), 0 0 0 1px oklch(100% 0 0 / 0.06),
+		inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
+
+	--globe-ocean: oklch(15.5% 0.005 285.823 / 0.72);
+	--globe-land: oklch(24% 0.005 285.823 / 0.85);
+	--globe-land-stroke: oklch(68% 0 0 / 0.42);
+	--globe-graticule: oklch(100% 0 0 / 0.075);
+	--globe-rim: oklch(100% 0 0 / 0.24);
+}
+
+html[data-theme='light'] {
+	--bg-base: oklch(97% 0.002 285.823);
+	--bg-surface: oklch(99% 0.001 285.823);
+	--bg-glass: oklch(100% 0 0 / 0.62);
+	--bg-glass-hover: oklch(100% 0 0 / 0.82);
+	--bg-glass-strong: oklch(99% 0 0 / 0.88);
+	--bg-chip: oklch(14% 0.005 285.823 / 0.045);
+	--bg-chip-hover: oklch(14% 0.005 285.823 / 0.09);
+
+	--fg-primary: oklch(14% 0.005 285.823);
+	--fg-secondary: oklch(36% 0.005 285.823);
+	--fg-muted: oklch(52% 0.005 285.823);
+	--fg-inverse: oklch(97% 0.002 285.823);
+
+	--border-hairline: oklch(14% 0.005 285.823 / 0.08);
+	--border-subtle: oklch(14% 0.005 285.823 / 0.14);
+	--border-strong: oklch(14% 0.005 285.823 / 0.28);
+
+	--accent: oklch(91% 0.096 180.426);
+	--accent-glow: oklch(91% 0.096 180.426 / 0.55);
+	--accent-soft: oklch(91% 0.096 180.426 / 0.38);
+	--accent-border: oklch(62% 0.096 180.426 / 0.65);
+	--accent-text: oklch(34% 0.085 180.426);
+	--accent-ink: oklch(14% 0.005 285.823);
+
+	--grid-line: oklch(14% 0.005 285.823 / 0.05);
+	--grid-dot: oklch(14% 0.005 285.823 / 0.15);
+	--hud-stroke: oklch(14% 0.005 285.823 / 0.35);
+	--hud-text: oklch(14% 0.005 285.823 / 0.52);
+
+	--shadow-glass:
+		0 20px 50px -12px oklch(14% 0.005 285.823 / 0.1), 0 0 0 1px oklch(14% 0.005 285.823 / 0.06),
+		inset 0 1px 0 0 oklch(100% 0 0 / 0.8);
+
+	--globe-ocean: oklch(94% 0.003 285.823 / 0.78);
+	--globe-land: oklch(84% 0.004 285.823 / 0.88);
+	--globe-land-stroke: oklch(32% 0.005 285.823 / 0.42);
+	--globe-graticule: oklch(14% 0.005 285.823 / 0.08);
+	--globe-rim: oklch(14% 0.005 285.823 / 0.25);
+}
+
+:root {
+	--font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+	--font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	font-family: var(--font-sans);
+	background-color: var(--bg-base);
+	color: var(--fg-primary);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	min-height: 100dvh;
+	background-color: var(--bg-base);
+	color: var(--fg-primary);
+	overflow-x: hidden;
+	transition:
+		background-color 0.25s ease,
+		color 0.25s ease;
+}
+
+/* Hide native cursor on fine pointer devices where custom tactical cursor is active */
+@media (pointer: fine) {
+	body.custom-cursor-ready,
+	body.custom-cursor-ready a,
+	body.custom-cursor-ready button,
+	body.custom-cursor-ready [role='button'] {
+		cursor: none;
+	}
+}
+
+::selection {
+	background-color: oklch(91% 0.096 180.426);
+	color: oklch(14% 0.005 285.823);
+}
+
+::-moz-selection {
+	background-color: oklch(91% 0.096 180.426);
+	color: oklch(14% 0.005 285.823);
+}
+
+/* Focus-visible ring in accent color */
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+
+/* Glass surface panel utility */
+.glass-surface {
+	background: var(--bg-glass);
+	backdrop-filter: blur(14px) saturate(140%);
+	-webkit-backdrop-filter: blur(14px) saturate(140%);
+	border: 1px solid var(--border-subtle);
+	box-shadow: var(--shadow-glass);
+}
+
+/* Tactical corner bracket accents on cards */
+.tactical-frame {
+	position: relative;
+}
+
+.tactical-frame::before,
+.tactical-frame::after {
+	content: '';
+	position: absolute;
+	width: 8px;
+	height: 8px;
+	pointer-events: none;
+	border-color: var(--border-strong);
+	transition:
+		border-color 0.25s ease,
+		width 0.25s ease,
+		height 0.25s ease;
+}
+
+.tactical-frame::before {
+	top: -1px;
+	left: -1px;
+	border-top: 1.5px solid var(--border-strong);
+	border-left: 1.5px solid var(--border-strong);
+}
+
+.tactical-frame::after {
+	bottom: -1px;
+	right: -1px;
+	border-bottom: 1.5px solid var(--border-strong);
+	border-right: 1.5px solid var(--border-strong);
+}
+
+.tactical-frame:hover::before,
+.tactical-frame:hover::after {
+	border-color: var(--accent);
+	width: 12px;
+	height: 12px;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: var(--font-display);
+	text-wrap: balance;
+	margin: 0;
+}
+
+p {
+	margin: 0;
+	text-wrap: pretty;
+}
