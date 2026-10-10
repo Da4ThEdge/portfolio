@@ -36,9 +36,7 @@
 		Terminal,
 		Clock,
 		Sparkles,
-		Funnel,
-		ChevronLeft,
-		ChevronRight
+		Funnel
 	} from '@lucide/svelte';
 
 	// --- Loading & Preload State ---
@@ -64,15 +62,21 @@
 	let visitorEmoji = $state('🌙');
 	let visitorGmtLabel = $state('GMT+6');
 
-	// --- Projects Filtering, Carousel & Modal State ---
+	// --- Projects Filtering, Drag/Swipe Carousel & Modal State ---
 	let selectedClient = $state<ClientId | null>(null);
 	let activeModalProject = $state<ProjectItem | null>(null);
 	let carouselTrackEl: HTMLDivElement | undefined = $state();
 	let isCarouselPaused = $state(false);
+	let isDraggingCarousel = $state(false);
+	let cardsPerPage = $state(3);
+	let currentPage = $state(0);
 
 	const filteredProjects = $derived(
 		selectedClient ? PROJECTS.filter((p) => p.clientId === selectedClient) : PROJECTS
 	);
+
+	const totalPages = $derived(Math.max(1, Math.ceil(filteredProjects.length / cardsPerPage)));
+	const pageIndices = $derived(Array.from({ length: totalPages }, (_, idx) => idx));
 
 	const currentYear = new Date().getFullYear();
 
@@ -144,8 +148,50 @@
 		introHeadingEl?.focus({ preventScroll: true });
 	}
 
+	function getPageTargetScrollLeft(pageIdx: number): number {
+		if (!carouselTrackEl) return 0;
+		const maxScroll = Math.max(0, carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth);
+		if (totalPages <= 1 || pageIdx <= 0) return 0;
+		if (pageIdx >= totalPages - 1) return maxScroll;
+
+		const cards = carouselTrackEl.querySelectorAll<HTMLElement>('.project-card');
+		const targetCardIdx = Math.min(pageIdx * cardsPerPage, Math.max(0, cards.length - 1));
+		const targetCard = cards[targetCardIdx];
+		if (!targetCard) {
+			return (pageIdx / (totalPages - 1)) * maxScroll;
+		}
+		return Math.min(maxScroll, Math.max(0, targetCard.offsetLeft));
+	}
+
+	function computeClosestPageFromScroll(scrollLeftVal: number): number {
+		if (!carouselTrackEl || totalPages <= 1) return 0;
+		let bestPage = 0;
+		let minDiff = Infinity;
+		for (let p = 0; p < totalPages; p++) {
+			const targetLeft = getPageTargetScrollLeft(p);
+			const diff = Math.abs(scrollLeftVal - targetLeft);
+			if (diff < minDiff) {
+				minDiff = diff;
+				bestPage = p;
+			}
+		}
+		return bestPage;
+	}
+
+	function goToPage(pageIdx: number, smooth = true) {
+		const clamped = Math.max(0, Math.min(totalPages - 1, pageIdx));
+		currentPage = clamped;
+		if (!carouselTrackEl) return;
+		const left = getPageTargetScrollLeft(clamped);
+		carouselTrackEl.scrollTo({
+			left,
+			behavior: smooth ? 'smooth' : 'auto'
+		});
+	}
+
 	function handleSelectClient(clientId: ClientId | null) {
 		selectedClient = clientId;
+		currentPage = 0;
 		if (carouselTrackEl) {
 			carouselTrackEl.scrollTo({ left: 0, behavior: 'smooth' });
 		}
@@ -155,10 +201,111 @@
 		return PROJECTS.filter((p) => p.clientId === clientId).length;
 	}
 
-	function scrollCarouselBy(direction: -1 | 1) {
-		if (!carouselTrackEl) return;
-		const step = 360;
-		carouselTrackEl.scrollBy({ left: direction * step, behavior: 'smooth' });
+	// --- Pointer Drag / Swipe Gesture Handlers for Projects Carousel ---
+	let dragStartX = 0;
+	let dragLastX = 0;
+	let dragLastTime = 0;
+	let dragVelocityX = 0;
+	let dragStartScrollLeft = 0;
+	let dragStartPage = 0;
+	let hasDraggedCarousel = false;
+	let suppressCardClick = false;
+	let scrollSyncRaf = 0;
+
+	function onCarouselPointerDown(e: PointerEvent) {
+		if (e.button !== 0 || !carouselTrackEl) return;
+		isDraggingCarousel = true;
+		hasDraggedCarousel = false;
+		dragStartX = e.clientX;
+		dragLastX = e.clientX;
+		dragLastTime = performance.now();
+		dragVelocityX = 0;
+		dragStartScrollLeft = carouselTrackEl.scrollLeft;
+		dragStartPage = currentPage;
+	}
+
+	function onCarouselPointerMove(e: PointerEvent) {
+		if (!isDraggingCarousel || !carouselTrackEl) return;
+		const dx = e.clientX - dragStartX;
+
+		if (!hasDraggedCarousel && Math.abs(dx) > 6) {
+			hasDraggedCarousel = true;
+			suppressCardClick = true;
+			try {
+				carouselTrackEl.setPointerCapture(e.pointerId);
+			} catch {
+				// Ignore capture errors
+			}
+		}
+
+		if (hasDraggedCarousel) {
+			const now = performance.now();
+			const dt = Math.max(1, now - dragLastTime);
+			dragVelocityX = (e.clientX - dragLastX) / dt;
+			dragLastX = e.clientX;
+			dragLastTime = now;
+
+			const nextLeft = dragStartScrollLeft - dx;
+			carouselTrackEl.scrollLeft = nextLeft;
+			currentPage = computeClosestPageFromScroll(carouselTrackEl.scrollLeft);
+		}
+	}
+
+	function onCarouselPointerUp(e: PointerEvent) {
+		if (!isDraggingCarousel) return;
+		isDraggingCarousel = false;
+
+		if (carouselTrackEl) {
+			try {
+				if (carouselTrackEl.hasPointerCapture(e.pointerId)) {
+					carouselTrackEl.releasePointerCapture(e.pointerId);
+				}
+			} catch {
+				// Ignore release errors
+			}
+		}
+
+		if (hasDraggedCarousel && carouselTrackEl) {
+			const totalDx = e.clientX - dragStartX;
+			const projectedScroll = carouselTrackEl.scrollLeft - dragVelocityX * 220;
+			let targetPage = computeClosestPageFromScroll(projectedScroll);
+
+			if (targetPage === dragStartPage) {
+				if (totalDx < -45 || dragVelocityX < -0.3) {
+					targetPage = Math.min(totalPages - 1, dragStartPage + 1);
+				} else if (totalDx > 45 || dragVelocityX > 0.3) {
+					targetPage = Math.max(0, dragStartPage - 1);
+				}
+			}
+
+			goToPage(targetPage, true);
+
+			window.setTimeout(() => {
+				suppressCardClick = false;
+			}, 60);
+		} else {
+			suppressCardClick = false;
+		}
+
+		hasDraggedCarousel = false;
+	}
+
+	function onCarouselClickCapture(e: MouseEvent) {
+		if (suppressCardClick) {
+			e.preventDefault();
+			e.stopPropagation();
+			suppressCardClick = false;
+		}
+	}
+
+	function onCarouselScroll() {
+		if (isDraggingCarousel || scrollSyncRaf) return;
+		scrollSyncRaf = requestAnimationFrame(() => {
+			scrollSyncRaf = 0;
+			if (carouselTrackEl && !isDraggingCarousel) {
+				currentPage = computeClosestPageFromScroll(carouselTrackEl.scrollLeft);
+			}
+		});
 	}
 
 	onMount(() => {
@@ -239,12 +386,12 @@
 			loaderPhase = 'docking';
 			window.setTimeout(() => {
 				loaderPhase = 'done';
-			}, 620);
+			}, 640);
 		}
 
 		runPreloadSequence();
 
-		// --- On-Demand Smooth Scroll Progress (Zero Idle Layout Reads) ---
+		// --- On-Demand Smooth Scroll Progress & Responsive Cards Per Page ---
 		let targetScrollP = 0;
 		let currentScrollP = 0;
 		let scrollRafId = 0;
@@ -262,8 +409,24 @@
 			}
 		}
 
+		function updateResponsiveCardsPerPage() {
+			const w = window.innerWidth;
+			const next = w <= 640 ? 1 : w <= 960 ? 2 : 3;
+			if (next !== cardsPerPage) {
+				cardsPerPage = next;
+				currentPage = Math.min(
+					currentPage,
+					Math.max(0, Math.ceil(filteredProjects.length / next) - 1)
+				);
+			}
+		}
+
 		function handleScrollOrResize() {
-			const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+			updateResponsiveCardsPerPage();
+			const maxScroll = Math.max(
+				1,
+				document.documentElement.scrollHeight - document.documentElement.clientHeight - 2
+			);
 			targetScrollP = Math.min(1, Math.max(0, window.scrollY / maxScroll));
 			if (!scrollRafId) {
 				scrollRafId = requestAnimationFrame(stepScrollProgress);
@@ -274,60 +437,30 @@
 		window.addEventListener('scroll', handleScrollOrResize, { passive: true });
 		window.addEventListener('resize', handleScrollOrResize, { passive: true });
 
-		// --- Auto-Scrolling Horizontal Projects Carousel ---
-		let carouselRafId = 0;
+		// --- Paginated Auto-Scroll Timer for Projects Gallery ---
 		let isCarouselVisible = false;
-		let carouselDir = 1;
-		let subpixelAccumulator = 0;
-		let prevCarouselTime = performance.now();
 
-		function stepCarouselAutoScroll(now: number) {
-			if (!isCarouselVisible) {
-				carouselRafId = 0;
+		const autoAdvanceTimer = window.setInterval(() => {
+			if (
+				!isCarouselVisible ||
+				isCarouselPaused ||
+				isDraggingCarousel ||
+				activeModalProject ||
+				totalPages <= 1
+			) {
 				return;
 			}
-
-			const dt = Math.min(64, now - prevCarouselTime);
-			prevCarouselTime = now;
-
-			if (carouselTrackEl && !isCarouselPaused && !activeModalProject) {
-				const maxScrollLeft = carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth;
-				if (maxScrollLeft > 4) {
-					const speedPxPerMs = 0.032; // ~32px per second smooth auto-scroll
-					subpixelAccumulator += dt * speedPxPerMs * carouselDir;
-
-					if (Math.abs(subpixelAccumulator) >= 1) {
-						const deltaPx = Math.trunc(subpixelAccumulator);
-						subpixelAccumulator -= deltaPx;
-						const nextLeft = carouselTrackEl.scrollLeft + deltaPx;
-
-						if (nextLeft >= maxScrollLeft - 1) {
-							carouselTrackEl.scrollLeft = maxScrollLeft;
-							carouselDir = -1;
-						} else if (nextLeft <= 1) {
-							carouselTrackEl.scrollLeft = 0;
-							carouselDir = 1;
-						} else {
-							carouselTrackEl.scrollLeft = nextLeft;
-						}
-					}
-				}
-			}
-
-			carouselRafId = requestAnimationFrame(stepCarouselAutoScroll);
-		}
+			const nextPage = (currentPage + 1) % totalPages;
+			goToPage(nextPage, true);
+		}, 4200);
 
 		const carouselObserver = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
 					isCarouselVisible = entry.isIntersecting;
-					if (isCarouselVisible && !carouselRafId) {
-						prevCarouselTime = performance.now();
-						carouselRafId = requestAnimationFrame(stepCarouselAutoScroll);
-					}
 				}
 			},
-			{ threshold: 0.05 }
+			{ threshold: 0.1 }
 		);
 
 		if (carouselTrackEl) {
@@ -355,10 +488,11 @@
 
 		return () => {
 			window.clearInterval(clockTimer);
+			window.clearInterval(autoAdvanceTimer);
 			window.removeEventListener('scroll', handleScrollOrResize);
 			window.removeEventListener('resize', handleScrollOrResize);
 			if (scrollRafId) cancelAnimationFrame(scrollRafId);
-			if (carouselRafId) cancelAnimationFrame(carouselRafId);
+			if (scrollSyncRaf) cancelAnimationFrame(scrollSyncRaf);
 			carouselObserver.disconnect();
 			navObserver.disconnect();
 		};
@@ -379,7 +513,7 @@
 				? `transform: ${dockTransform};`
 				: undefined}
 		>
-			<AnimatedLogo mode="loader" size={136} />
+			<AnimatedLogo mode="loader" isDocking={loaderPhase === 'docking'} size={136} />
 		</div>
 
 		<div class="loader-telemetry {loaderPhase === 'docking' ? 'is-fading' : ''}">
@@ -387,7 +521,7 @@
 				<div class="loader-bar-fill" style="width: {preloadProgress}%;"></div>
 			</div>
 			<div class="loader-status-row">
-				<span>SYS_INIT // PRELOADING ASSETS</span>
+				<span>SYS_INIT // LOADING</span>
 				<span>{preloadProgress}%</span>
 			</div>
 		</div>
@@ -570,233 +704,252 @@
 				<span>FILTER</span>
 			</div>
 
-			<div class="filter-controls-right">
-				<div class="filter-buttons">
-					<button
-						type="button"
-						class="filter-chip {selectedClient === null ? 'is-active' : ''}"
-						onclick={() => handleSelectClient(null)}
-						aria-pressed={selectedClient === null}
-					>
-						<span>All Clients</span>
-						<span class="chip-count">{PROJECTS.length}</span>
-					</button>
+			<div class="filter-buttons">
+				<button
+					type="button"
+					class="filter-chip {selectedClient === null ? 'is-active' : ''}"
+					onclick={() => handleSelectClient(null)}
+					aria-pressed={selectedClient === null}
+				>
+					<span>All Clients</span>
+					<span class="chip-count">{PROJECTS.length}</span>
+				</button>
 
-					{#each CLIENTS as client (client.id)}
-						{@const isSelected = selectedClient === client.id}
-						<button
-							type="button"
-							class="filter-chip {isSelected ? 'is-active' : ''}"
-							onclick={() => handleSelectClient(isSelected ? null : client.id)}
-							aria-pressed={isSelected}
-						>
-							<span class="chip-logo">
-								{#if client.logoType === 'svg-mask'}
-									<span
-										class="chip-masked-logo"
-										style="-webkit-mask-image: url('{client.logo}'); mask-image: url('{client.logo}');"
-									></span>
-								{:else}
-									<img src={client.logo} alt="" />
-								{/if}
-							</span>
-							<span>{client.name}</span>
-							<span class="chip-count">{getProjectCountForClient(client.id)}</span>
-						</button>
-					{/each}
-				</div>
-
-				<div class="carousel-nav-btns" aria-label="Carousel scroll controls">
+				{#each CLIENTS as client (client.id)}
+					{@const isSelected = selectedClient === client.id}
 					<button
 						type="button"
-						class="carousel-arrow-btn"
-						onclick={() => scrollCarouselBy(-1)}
-						aria-label="Scroll projects left"
-						title="Scroll left"
+						class="filter-chip {isSelected ? 'is-active' : ''}"
+						onclick={() => handleSelectClient(isSelected ? null : client.id)}
+						aria-pressed={isSelected}
 					>
-						<ChevronLeft size={16} />
+						<span class="chip-logo">
+							{#if client.logoType === 'svg-mask'}
+								<span
+									class="chip-masked-logo"
+									style="-webkit-mask-image: url('{client.logo}'); mask-image: url('{client.logo}');"
+								></span>
+							{:else}
+								<img src={client.logo} alt="" />
+							{/if}
+						</span>
+						<span>{client.name}</span>
+						<span class="chip-count">{getProjectCountForClient(client.id)}</span>
 					</button>
-					<button
-						type="button"
-						class="carousel-arrow-btn"
-						onclick={() => scrollCarouselBy(1)}
-						aria-label="Scroll projects right"
-						title="Scroll right"
-					>
-						<ChevronRight size={16} />
-					</button>
-				</div>
+				{/each}
 			</div>
 		</div>
 
-		<!-- Horizontal Auto-Scrolling Carousel Gallery of Project Cards -->
+		<!-- Interactive Drag/Swipe Carousel Gallery with Paginated Dots -->
 		<div
-			class="projects-carousel-viewport"
-			bind:this={carouselTrackEl}
+			class="projects-gallery-shell"
 			onmouseenter={() => (isCarouselPaused = true)}
 			onmouseleave={() => (isCarouselPaused = false)}
 			onfocusin={() => (isCarouselPaused = true)}
 			onfocusout={() => (isCarouselPaused = false)}
-			ontouchstart={() => (isCarouselPaused = true)}
-			ontouchend={() => (isCarouselPaused = false)}
-			role="region"
+			role="group"
 			aria-label="Projects carousel gallery"
 		>
-			{#each filteredProjects as project (project.id)}
-				{@const clientObj = CLIENTS.find((c) => c.id === project.clientId)}
-				{#if project.externalUrl}
-					<!-- External URL Project Card -->
-					<a
-						href={project.externalUrl}
-						target="_blank"
-						rel="noreferrer noopener nofollow"
-						class="project-card glass-surface tactical-frame"
-						aria-label="{project.title} — Open external link in new tab"
-					>
-						<div class="card-thumb-wrap">
-							<img src={project.thumbnail} alt={project.title} loading="lazy" class="card-thumb" />
-							<div class="card-thumb-overlay">
-								<span class="external-hover-badge">
-									<ExternalLink size={16} />
-									<span>OPEN LINK</span>
-								</span>
+			<div
+				class="projects-carousel-viewport {isDraggingCarousel ? 'is-dragging' : ''}"
+				bind:this={carouselTrackEl}
+				onpointerdown={onCarouselPointerDown}
+				onpointermove={onCarouselPointerMove}
+				onpointerup={onCarouselPointerUp}
+				onpointercancel={onCarouselPointerUp}
+				onclickcapture={onCarouselClickCapture}
+				ondragstart={(e) => e.preventDefault()}
+				onscroll={onCarouselScroll}
+				role="region"
+				aria-label="Draggable project cards track"
+			>
+				{#each filteredProjects as project (project.id)}
+					{@const clientObj = CLIENTS.find((c) => c.id === project.clientId)}
+					{#if project.externalUrl}
+						<!-- External URL Project Card -->
+						<a
+							href={project.externalUrl}
+							target="_blank"
+							rel="noreferrer noopener nofollow"
+							draggable="false"
+							class="project-card glass-surface tactical-frame"
+							aria-label="{project.title} — Open external link in new tab"
+						>
+							<div class="card-thumb-wrap">
+								<img
+									src={project.thumbnail}
+									alt={project.title}
+									loading="lazy"
+									draggable="false"
+									class="card-thumb"
+								/>
+								<div class="card-thumb-overlay">
+									<span class="external-hover-badge">
+										<ExternalLink size={16} />
+										<span>OPEN LINK</span>
+									</span>
+								</div>
+								{#if project.statusBadge}
+									<span class="card-status-badge">{project.statusBadge}</span>
+								{/if}
 							</div>
-							{#if project.statusBadge}
-								<span class="card-status-badge">{project.statusBadge}</span>
-							{/if}
-						</div>
 
-						<div class="card-body">
-							<h3 class="card-title">{project.title}</h3>
+							<div class="card-body">
+								<h3 class="card-title">{project.title}</h3>
 
-							<div class="card-meta-stack">
-								<div class="card-client-tag">
-									{#if clientObj}
-										<span class="mini-client-logo">
-											{#if clientObj.logoType === 'svg-mask'}
+								<div class="card-meta-stack">
+									<div class="card-client-tag">
+										{#if clientObj}
+											<span class="mini-client-logo">
+												{#if clientObj.logoType === 'svg-mask'}
+													<span
+														class="chip-masked-logo"
+														style="-webkit-mask-image: url('{clientObj.logo}'); mask-image: url('{clientObj.logo}');"
+													></span>
+												{:else}
+													<img src={clientObj.logo} alt="" draggable="false" />
+												{/if}
+											</span>
+										{/if}
+										<span>{project.clientName}</span>
+									</div>
+									<div class="card-date">{project.dateLabel}</div>
+								</div>
+
+								<p class="card-publisher">Publisher: {project.publisher}</p>
+
+								{#if project.stack && project.stack.length > 0}
+									<div class="card-tags">
+										{#each project.stack as tag (tag)}
+											<span class="stack-pill">{tag}</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						</a>
+					{:else if project.screenshots && project.screenshots.length > 0}
+						<!-- Multi-Screenshot Showcase Card (Project) -->
+						<button
+							type="button"
+							class="project-card glass-surface tactical-frame"
+							onclick={() => (activeModalProject = project)}
+							aria-label="Open {project.title} screenshot gallery ({project.screenshots
+								.length} screenshots)"
+						>
+							<div class="card-thumb-wrap">
+								<img
+									src={project.thumbnail}
+									alt={project.title}
+									loading="lazy"
+									draggable="false"
+									class="card-thumb"
+								/>
+								<div class="card-thumb-overlay">
+									<span class="external-hover-badge">
+										<Layers size={16} />
+										<span>VIEW {project.screenshots.length} SCREENSHOTS</span>
+									</span>
+								</div>
+								{#if project.statusBadge}
+									<span class="card-status-badge is-accent">{project.statusBadge}</span>
+								{/if}
+							</div>
+
+							<div class="card-body">
+								<h3 class="card-title">{project.title}</h3>
+
+								<div class="card-meta-stack">
+									<div class="card-client-tag">
+										{#if clientObj}
+											<span class="mini-client-logo">
 												<span
 													class="chip-masked-logo"
 													style="-webkit-mask-image: url('{clientObj.logo}'); mask-image: url('{clientObj.logo}');"
 												></span>
-											{:else}
-												<img src={clientObj.logo} alt="" />
-											{/if}
-										</span>
-									{/if}
-									<span>{project.clientName}</span>
+											</span>
+										{/if}
+										<span>{project.clientName}</span>
+									</div>
+									<div class="card-date">{project.dateLabel}</div>
 								</div>
-								<div class="card-date">{project.dateLabel}</div>
+
+								{#if project.description}
+									<p class="card-desc">{project.description}</p>
+								{/if}
+
+								{#if project.stack && project.stack.length > 0}
+									<div class="card-tags">
+										{#each project.stack as tag (tag)}
+											<span class="stack-pill">{tag}</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						</button>
+					{:else}
+						<!-- Internal Project Card (Project) -->
+						<article class="project-card glass-surface tactical-frame">
+							<div class="card-thumb-wrap">
+								<img
+									src={project.thumbnail}
+									alt="{project.title} system preview"
+									loading="lazy"
+									draggable="false"
+									class="card-thumb"
+								/>
 							</div>
 
-							<p class="card-publisher">Publisher: {project.publisher}</p>
+							<div class="card-body">
+								<h3 class="card-title">{project.title}</h3>
 
-							{#if project.stack && project.stack.length > 0}
-								<div class="card-tags">
-									{#each project.stack as tag (tag)}
-										<span class="stack-pill">{tag}</span>
-									{/each}
+								<div class="card-meta-stack">
+									<div class="card-client-tag">
+										{#if clientObj}
+											<span class="mini-client-logo">
+												<span
+													class="chip-masked-logo"
+													style="-webkit-mask-image: url('{clientObj.logo}'); mask-image: url('{clientObj.logo}');"
+												></span>
+											</span>
+										{/if}
+										<span>{project.clientName}</span>
+									</div>
+									<div class="card-date">{project.dateLabel}</div>
 								</div>
-							{/if}
-						</div>
-					</a>
-				{:else if project.screenshots && project.screenshots.length > 0}
-					<!-- Multi-Screenshot Showcase Card (Project) -->
-					<button
-						type="button"
-						class="project-card glass-surface tactical-frame"
-						onclick={() => (activeModalProject = project)}
-						aria-label="Open {project.title} screenshot gallery ({project.screenshots
-							.length} screenshots)"
-					>
-						<div class="card-thumb-wrap">
-							<img src={project.thumbnail} alt={project.title} loading="lazy" class="card-thumb" />
-							<div class="card-thumb-overlay">
-								<span class="external-hover-badge">
-									<Layers size={16} />
-									<span>VIEW {project.screenshots.length} SCREENSHOTS</span>
-								</span>
+
+								{#if project.description}
+									<p class="card-desc">{project.description}</p>
+								{/if}
+
+								{#if project.stack && project.stack.length > 0}
+									<div class="card-tags">
+										{#each project.stack as tag (tag)}
+											<span class="stack-pill">{tag}</span>
+										{/each}
+									</div>
+								{/if}
 							</div>
-							{#if project.statusBadge}
-								<span class="card-status-badge is-accent">{project.statusBadge}</span>
-							{/if}
-						</div>
+						</article>
+					{/if}
+				{/each}
+			</div>
 
-						<div class="card-body">
-							<h3 class="card-title">{project.title}</h3>
-
-							<div class="card-meta-stack">
-								<div class="card-client-tag">
-									{#if clientObj}
-										<span class="mini-client-logo">
-											<span
-												class="chip-masked-logo"
-												style="-webkit-mask-image: url('{clientObj.logo}'); mask-image: url('{clientObj.logo}');"
-											></span>
-										</span>
-									{/if}
-									<span>{project.clientName}</span>
-								</div>
-								<div class="card-date">{project.dateLabel}</div>
-							</div>
-
-							{#if project.description}
-								<p class="card-desc">{project.description}</p>
-							{/if}
-
-							{#if project.stack && project.stack.length > 0}
-								<div class="card-tags">
-									{#each project.stack as tag (tag)}
-										<span class="stack-pill">{tag}</span>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</button>
-				{:else}
-					<!-- Internal Project Card (Project) -->
-					<article class="project-card glass-surface tactical-frame">
-						<div class="card-thumb-wrap">
-							<img
-								src={project.thumbnail}
-								alt="{project.title} system preview"
-								loading="lazy"
-								class="card-thumb"
-							/>
-						</div>
-
-						<div class="card-body">
-							<h3 class="card-title">{project.title}</h3>
-
-							<div class="card-meta-stack">
-								<div class="card-client-tag">
-									{#if clientObj}
-										<span class="mini-client-logo">
-											<span
-												class="chip-masked-logo"
-												style="-webkit-mask-image: url('{clientObj.logo}'); mask-image: url('{clientObj.logo}');"
-											></span>
-										</span>
-									{/if}
-									<span>{project.clientName}</span>
-								</div>
-								<div class="card-date">{project.dateLabel}</div>
-							</div>
-
-							{#if project.description}
-								<p class="card-desc">{project.description}</p>
-							{/if}
-
-							{#if project.stack && project.stack.length > 0}
-								<div class="card-tags">
-									{#each project.stack as tag (tag)}
-										<span class="stack-pill">{tag}</span>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</article>
-				{/if}
-			{/each}
+			{#if totalPages > 1}
+				<div class="carousel-pagination" role="tablist" aria-label="Project gallery pages">
+					{#each pageIndices as pageIdx (pageIdx)}
+						<button
+							type="button"
+							role="tab"
+							class="pagination-dot {currentPage === pageIdx ? 'is-active' : ''}"
+							aria-selected={currentPage === pageIdx}
+							aria-label="Go to project page {pageIdx + 1} of {totalPages}"
+							onclick={() => goToPage(pageIdx, true)}
+						>
+							<span class="dot-pill"></span>
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</section>
 
@@ -839,7 +992,6 @@
 									</span>
 									<span class="skill-tag">{skill.tag}</span>
 								</div>
-								<p class="skill-detail">{skill.detail}</p>
 							</li>
 						{/each}
 					</ul>
@@ -935,7 +1087,7 @@
 		align-items: center;
 		justify-content: center;
 		gap: 2.25rem;
-		transition: background-color 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+		transition: background-color 0.56s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.initial-loader-screen.is-docking {
@@ -944,8 +1096,10 @@
 	}
 
 	.loader-logo-stage {
+		transform: translate3d(0px, 0px, 0) scale(1);
+		transform-origin: center center;
 		will-change: transform;
-		transition: transform 0.58s cubic-bezier(0.22, 1, 0.36, 1);
+		transition: transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.loader-telemetry {
@@ -1138,7 +1292,7 @@
 		}
 	}
 
-	/* --- 3. Foreground Glass Plane (Static Coordinate Space for Crisp Text & Fast Backdrop Filters) --- */
+	/* --- 3. Foreground Glass Plane --- */
 	.page-foreground-plane {
 		position: relative;
 		z-index: 10;
@@ -1445,13 +1599,6 @@
 		font-weight: 600;
 	}
 
-	.filter-controls-right {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.85rem;
-	}
-
 	.filter-buttons {
 		display: flex;
 		flex-wrap: wrap;
@@ -1527,46 +1674,33 @@
 		background: oklch(0% 0 0 / 0.15);
 	}
 
-	.carousel-nav-btns {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
+	/* --- Drag/Swipe Projects Carousel Gallery & Paginated Dots --- */
+	.projects-gallery-shell {
+		display: flex;
+		flex-direction: column;
+		gap: 1.15rem;
 	}
 
-	.carousel-arrow-btn {
-		width: 32px;
-		height: 32px;
-		border-radius: 8px;
-		border: 1px solid var(--border-subtle);
-		background: var(--bg-chip);
-		color: var(--fg-primary);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		transition:
-			border-color 0.2s ease,
-			background-color 0.2s ease;
-	}
-
-	.carousel-arrow-btn:hover {
-		border-color: var(--accent);
-		background: var(--accent-soft);
-	}
-
-	/* --- Horizontal Auto-Scrolling Projects Carousel --- */
 	.projects-carousel-viewport {
+		position: relative;
 		display: flex;
 		align-items: stretch;
 		gap: 1.25rem;
 		overflow-x: auto;
-		padding: 0.3rem 0.15rem 0.9rem;
-		scrollbar-width: thin;
-		scrollbar-color: var(--border-strong) transparent;
+		padding: 0.3rem 0.05rem 0.4rem;
+		user-select: none;
+		touch-action: pan-y;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.projects-carousel-viewport::-webkit-scrollbar {
+		display: none;
 	}
 
 	.project-card {
-		flex: 0 0 336px;
+		flex: 0 0 calc((100% - 2.5rem) / 3);
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		border-radius: 14px;
@@ -1581,15 +1715,60 @@
 			box-shadow 0.24s ease;
 	}
 
-	@media (max-width: 640px) {
+	@media (max-width: 960px) {
 		.project-card {
-			flex: 0 0 288px;
+			flex: 0 0 calc((100% - 1.25rem) / 2);
 		}
 	}
 
-	.project-card:hover {
+	@media (max-width: 640px) {
+		.project-card {
+			flex: 0 0 100%;
+		}
+	}
+
+	.projects-carousel-viewport:not(.is-dragging) .project-card:hover {
 		transform: translateY(-4px);
 		border-color: var(--accent-border);
+	}
+
+	.carousel-pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		padding-top: 0.15rem;
+	}
+
+	.pagination-dot {
+		padding: 0.4rem 0.25rem;
+		background: transparent;
+		border: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.dot-pill {
+		width: 8px;
+		height: 8px;
+		border-radius: 999px;
+		background: var(--border-strong);
+		transition:
+			width 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+			background-color 0.22s ease,
+			box-shadow 0.22s ease;
+	}
+
+	.pagination-dot:hover .dot-pill {
+		background: var(--fg-secondary);
+	}
+
+	.pagination-dot.is-active .dot-pill {
+		width: 28px;
+		background: var(--accent);
+		box-shadow: 0 0 12px var(--accent-glow);
 	}
 
 	.card-thumb-wrap {
@@ -1606,10 +1785,11 @@
 		height: 100%;
 		object-fit: cover;
 		display: block;
+		pointer-events: none;
 		transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.project-card:hover .card-thumb {
+	.projects-carousel-viewport:not(.is-dragging) .project-card:hover .card-thumb {
 		transform: scale(1.045);
 	}
 
@@ -1626,7 +1806,7 @@
 		transition: opacity 0.22s ease;
 	}
 
-	.project-card:hover .card-thumb-overlay,
+	.projects-carousel-viewport:not(.is-dragging) .project-card:hover .card-thumb-overlay,
 	.project-card:focus-visible .card-thumb-overlay {
 		opacity: 1;
 	}
@@ -1648,7 +1828,7 @@
 		box-shadow: 0 8px 20px oklch(0% 0 0 / 0.45);
 	}
 
-	.project-card:hover .external-hover-badge,
+	.projects-carousel-viewport:not(.is-dragging) .project-card:hover .external-hover-badge,
 	.project-card:focus-visible .external-hover-badge {
 		transform: translateY(0);
 	}
@@ -1846,7 +2026,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		margin-bottom: 0.22rem;
 	}
 
 	.skill-name {
@@ -1873,12 +2052,6 @@
 		background: var(--bg-surface);
 		border: 1px solid var(--border-subtle);
 		color: var(--fg-muted);
-	}
-
-	.skill-detail {
-		font-size: 0.76rem;
-		line-height: 1.45;
-		color: var(--fg-secondary);
 	}
 
 	/* --- Section 04: #connect --- */

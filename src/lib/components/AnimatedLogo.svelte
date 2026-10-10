@@ -1,12 +1,19 @@
 <script lang="ts">
 	interface Props {
 		mode?: 'loader' | 'scroll';
+		isDocking?: boolean;
 		progress?: number; // 0 to 1 when mode === 'scroll'
 		size?: number;
 		class?: string;
 	}
 
-	let { mode = 'loader', progress = 0, size = 36, class: className = '' }: Props = $props();
+	let {
+		mode = 'loader',
+		isDocking = false,
+		progress = 0,
+		size = 36,
+		class: className = ''
+	}: Props = $props();
 
 	const clampedProgress = $derived(Math.min(1, Math.max(0, progress)));
 
@@ -55,12 +62,14 @@
 		};
 	});
 
-	// Stroke fill progress (0 -> 100)
-	const dashOffset = $derived((1 - clampedProgress) * 100);
+	// Stroke fill length (0 -> 100) starting from both middle horizontal edges
+	const fillDashArray = $derived(`${(clampedProgress * 100).toFixed(2)} 110`);
 </script>
 
 <div
-	class="logo-wrapper {mode === 'loader' ? 'is-loader' : 'is-scroll'} {className}"
+	class="logo-wrapper {mode === 'loader' ? 'is-loader' : 'is-scroll'} {isDocking
+		? 'is-docking'
+		: ''} {className}"
 	style="width: {size}px; height: {size}px;"
 >
 	<svg
@@ -74,39 +83,39 @@
 			class="loader-group"
 			style={mode === 'scroll' ? `transform: ${scrollTransforms.group};` : undefined}
 		>
-			<!-- Base track paths -->
+			<!--
+				Both paths start from their middle horizontal edges:
+				- Top shape starts at (19, 17.5) -> (5, 17.5) -> (16.5, 5) -> (16.5, 14)
+				- Bottom shape starts at (14, 15.5) -> (28, 15.5) -> (16.5, 28) -> (16.5, 19)
+			-->
 			<path
 				class="top-shape base-stroke"
-				d="M16.5 14V5L5 17.5H19"
-				vector-effect="non-scaling-stroke"
+				d="M19 17.5H5L16.5 5V14"
 				style={mode === 'scroll' ? `transform: ${scrollTransforms.top};` : undefined}
 			/>
 			<path
 				class="bottom-shape base-stroke"
 				d="M14 15.5H28L16.5 28V19"
-				vector-effect="non-scaling-stroke"
 				style={mode === 'scroll' ? `transform: ${scrollTransforms.bottom};` : undefined}
 			/>
 
 			{#if mode === 'scroll'}
-				<!-- Progressive accent color-fill paths driven by scroll progress -->
+				<!-- Progressive accent color-fill paths starting from the middle two horizontal edges -->
 				<path
 					class="top-shape accent-fill-stroke"
-					d="M16.5 14V5L5 17.5H19"
+					d="M19 17.5H5L16.5 5V14"
 					pathLength="100"
-					stroke-dasharray="100"
-					stroke-dashoffset={dashOffset}
-					vector-effect="non-scaling-stroke"
-					style="transform: {scrollTransforms.top}; opacity: {clampedProgress > 0.005 ? 1 : 0};"
+					stroke-dasharray={fillDashArray}
+					stroke-dashoffset="0"
+					style="transform: {scrollTransforms.top}; opacity: {clampedProgress > 0.002 ? 1 : 0};"
 				/>
 				<path
 					class="bottom-shape accent-fill-stroke"
 					d="M14 15.5H28L16.5 28V19"
 					pathLength="100"
-					stroke-dasharray="100"
-					stroke-dashoffset={dashOffset}
-					vector-effect="non-scaling-stroke"
-					style="transform: {scrollTransforms.bottom}; opacity: {clampedProgress > 0.005 ? 1 : 0};"
+					stroke-dasharray={fillDashArray}
+					stroke-dashoffset="0"
+					style="transform: {scrollTransforms.bottom}; opacity: {clampedProgress > 0.002 ? 1 : 0};"
 				/>
 			{/if}
 		</g>
@@ -141,10 +150,10 @@
 		transform-origin: 16.5px 15.5px;
 	}
 
-	/* Scroll mode stroke colors: crisp vector strokes with high legibility */
+	/* Scroll mode stroke colors: sleek, thin vector strokes */
 	.is-scroll .base-stroke {
 		stroke: var(--fg-secondary);
-		stroke-width: 2.2;
+		stroke-width: 1.35;
 		transition: stroke 0.2s ease;
 	}
 
@@ -154,13 +163,21 @@
 
 	.accent-fill-stroke {
 		stroke: var(--accent);
-		stroke-width: 2.4;
+		stroke-width: 1.45;
 	}
 
-	/* Loader mode: pure 2D vector orthographic projection so it stays 100% sharp */
+	/* Loader mode: matching viewBox stroke-width so scaling shrinks stroke continuously during docking */
 	.is-loader .base-stroke {
 		stroke: var(--accent);
-		stroke-width: 7;
+		stroke-width: 1.25;
+		transition:
+			stroke 0.55s ease,
+			stroke-width 0.55s ease;
+	}
+
+	.is-loader.is-docking .base-stroke {
+		stroke: var(--fg-secondary);
+		stroke-width: 1.35;
 	}
 
 	.is-loader .loader-group {
