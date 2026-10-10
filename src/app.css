@@ -58,11 +58,11 @@ html[data-theme='light'] {
 	--border-subtle: oklch(14% 0.005 285.823 / 0.14);
 	--border-strong: oklch(14% 0.005 285.823 / 0.28);
 
-	--accent: oklch(91% 0.096 180.426);
-	--accent-glow: oklch(91% 0.096 180.426 / 0.55);
-	--accent-soft: oklch(91% 0.096 180.426 / 0.38);
-	--accent-border: oklch(62% 0.096 180.426 / 0.65);
-	--accent-text: oklch(34% 0.085 180.426);
+	--accent: oklch(78% 0.118 180.426);
+	--accent-glow: oklch(78% 0.118 180.426 / 0.45);
+	--accent-soft: oklch(78% 0.118 180.426 / 0.22);
+	--accent-border: oklch(60% 0.118 180.426 / 0.65);
+	--accent-text: oklch(38% 0.105 180.426);
 	--accent-ink: oklch(14% 0.005 285.823);
 
 	--grid-line: oklch(14% 0.005 285.823 / 0.095);
@@ -127,19 +127,20 @@ body {
 	body.custom-cursor-ready,
 	body.custom-cursor-ready a,
 	body.custom-cursor-ready button,
-	body.custom-cursor-ready [role='button'] {
+	body.custom-cursor-ready [role='button'],
+	body.custom-cursor-ready [role='slider'] {
 		cursor: none;
 	}
 }
 
 ::selection {
-	background-color: oklch(91% 0.096 180.426);
-	color: oklch(14% 0.005 285.823);
+	background-color: var(--accent);
+	color: var(--accent-ink);
 }
 
 ::-moz-selection {
-	background-color: oklch(91% 0.096 180.426);
-	color: oklch(14% 0.005 285.823);
+	background-color: var(--accent);
+	color: var(--accent-ink);
 }
 
 /* Focus-visible ring in accent color */

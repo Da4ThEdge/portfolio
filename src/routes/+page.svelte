@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { Topology } from 'topojson-specification';
 	import AnimatedLogo from '#lib/components/AnimatedLogo.svelte';
 	import TacticalBackground from '#lib/components/TacticalBackground.svelte';
@@ -62,21 +64,27 @@
 	let visitorEmoji = $state('🌙');
 	let visitorGmtLabel = $state('GMT+6');
 
-	// --- Projects Filtering, Drag/Swipe Carousel & Modal State ---
+	// --- Projects Filtering, Drag/Swipe Carousel, Slider Line & Modal State ---
 	let selectedClient = $state<ClientId | null>(null);
 	let activeModalProject = $state<ProjectItem | null>(null);
 	let carouselTrackEl: HTMLDivElement | undefined = $state();
+	let sliderTrackEl: HTMLDivElement | undefined = $state();
 	let isCarouselPaused = $state(false);
 	let isDraggingCarousel = $state(false);
+	let isDraggingSlider = $state(false);
 	let cardsPerPage = $state(3);
-	let currentPage = $state(0);
+	let carouselScrollRatio = $state(0);
+	let lastCarouselInteractionTime = 0;
 
 	const filteredProjects = $derived(
 		selectedClient ? PROJECTS.filter((p) => p.clientId === selectedClient) : PROJECTS
 	);
 
-	const totalPages = $derived(Math.max(1, Math.ceil(filteredProjects.length / cardsPerPage)));
-	const pageIndices = $derived(Array.from({ length: totalPages }, (_, idx) => idx));
+	const hasCarouselOverflow = $derived(filteredProjects.length > cardsPerPage);
+	const sliderThumbWidthPct = $derived(
+		Math.max(14, Math.min(100, (cardsPerPage / Math.max(1, filteredProjects.length)) * 100))
+	);
+	const sliderThumbLeftPct = $derived(carouselScrollRatio * (100 - sliderThumbWidthPct));
 
 	const currentYear = new Date().getFullYear();
 
@@ -142,56 +150,23 @@
 
 	function scrollToTop() {
 		window.scrollTo({ top: 0, behavior: 'smooth' });
-		if (history.replaceState) {
-			history.replaceState(null, '', window.location.pathname);
+		if (window.location.hash) {
+			void goto(resolve('/'), { replace: true, shallow: true });
 		}
 		introHeadingEl?.focus({ preventScroll: true });
 	}
 
-	function getPageTargetScrollLeft(pageIdx: number): number {
-		if (!carouselTrackEl) return 0;
-		const maxScroll = Math.max(0, carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth);
-		if (totalPages <= 1 || pageIdx <= 0) return 0;
-		if (pageIdx >= totalPages - 1) return maxScroll;
-
-		const cards = carouselTrackEl.querySelectorAll<HTMLElement>('.project-card');
-		const targetCardIdx = Math.min(pageIdx * cardsPerPage, Math.max(0, cards.length - 1));
-		const targetCard = cards[targetCardIdx];
-		if (!targetCard) {
-			return (pageIdx / (totalPages - 1)) * maxScroll;
-		}
-		return Math.min(maxScroll, Math.max(0, targetCard.offsetLeft));
-	}
-
-	function computeClosestPageFromScroll(scrollLeftVal: number): number {
-		if (!carouselTrackEl || totalPages <= 1) return 0;
-		let bestPage = 0;
-		let minDiff = Infinity;
-		for (let p = 0; p < totalPages; p++) {
-			const targetLeft = getPageTargetScrollLeft(p);
-			const diff = Math.abs(scrollLeftVal - targetLeft);
-			if (diff < minDiff) {
-				minDiff = diff;
-				bestPage = p;
-			}
-		}
-		return bestPage;
-	}
-
-	function goToPage(pageIdx: number, smooth = true) {
-		const clamped = Math.max(0, Math.min(totalPages - 1, pageIdx));
-		currentPage = clamped;
+	function syncCarouselScrollRatio() {
 		if (!carouselTrackEl) return;
-		const left = getPageTargetScrollLeft(clamped);
-		carouselTrackEl.scrollTo({
-			left,
-			behavior: smooth ? 'smooth' : 'auto'
-		});
+		const maxScroll = carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth;
+		carouselScrollRatio =
+			maxScroll > 1 ? Math.min(1, Math.max(0, carouselTrackEl.scrollLeft / maxScroll)) : 0;
 	}
 
 	function handleSelectClient(clientId: ClientId | null) {
 		selectedClient = clientId;
-		currentPage = 0;
+		carouselScrollRatio = 0;
+		lastCarouselInteractionTime = performance.now();
 		if (carouselTrackEl) {
 			carouselTrackEl.scrollTo({ left: 0, behavior: 'smooth' });
 		}
@@ -207,7 +182,6 @@
 	let dragLastTime = 0;
 	let dragVelocityX = 0;
 	let dragStartScrollLeft = 0;
-	let dragStartPage = 0;
 	let hasDraggedCarousel = false;
 	let suppressCardClick = false;
 	let scrollSyncRaf = 0;
@@ -216,12 +190,12 @@
 		if (e.button !== 0 || !carouselTrackEl) return;
 		isDraggingCarousel = true;
 		hasDraggedCarousel = false;
+		lastCarouselInteractionTime = performance.now();
 		dragStartX = e.clientX;
 		dragLastX = e.clientX;
 		dragLastTime = performance.now();
 		dragVelocityX = 0;
 		dragStartScrollLeft = carouselTrackEl.scrollLeft;
-		dragStartPage = currentPage;
 	}
 
 	function onCarouselPointerMove(e: PointerEvent) {
@@ -244,16 +218,17 @@
 			dragVelocityX = (e.clientX - dragLastX) / dt;
 			dragLastX = e.clientX;
 			dragLastTime = now;
+			lastCarouselInteractionTime = now;
 
-			const nextLeft = dragStartScrollLeft - dx;
-			carouselTrackEl.scrollLeft = nextLeft;
-			currentPage = computeClosestPageFromScroll(carouselTrackEl.scrollLeft);
+			carouselTrackEl.scrollLeft = dragStartScrollLeft - dx;
+			syncCarouselScrollRatio();
 		}
 	}
 
 	function onCarouselPointerUp(e: PointerEvent) {
 		if (!isDraggingCarousel) return;
 		isDraggingCarousel = false;
+		lastCarouselInteractionTime = performance.now();
 
 		if (carouselTrackEl) {
 			try {
@@ -266,19 +241,12 @@
 		}
 
 		if (hasDraggedCarousel && carouselTrackEl) {
-			const totalDx = e.clientX - dragStartX;
-			const projectedScroll = carouselTrackEl.scrollLeft - dragVelocityX * 220;
-			let targetPage = computeClosestPageFromScroll(projectedScroll);
-
-			if (targetPage === dragStartPage) {
-				if (totalDx < -45 || dragVelocityX < -0.3) {
-					targetPage = Math.min(totalPages - 1, dragStartPage + 1);
-				} else if (totalDx > 45 || dragVelocityX > 0.3) {
-					targetPage = Math.max(0, dragStartPage - 1);
-				}
+			if (Math.abs(dragVelocityX) > 0.25) {
+				carouselTrackEl.scrollBy({
+					left: -dragVelocityX * 260,
+					behavior: 'smooth'
+				});
 			}
-
-			goToPage(targetPage, true);
 
 			window.setTimeout(() => {
 				suppressCardClick = false;
@@ -299,18 +267,103 @@
 	}
 
 	function onCarouselScroll() {
-		if (isDraggingCarousel || scrollSyncRaf) return;
+		if (isDraggingCarousel || isDraggingSlider || scrollSyncRaf) return;
 		scrollSyncRaf = requestAnimationFrame(() => {
 			scrollSyncRaf = 0;
-			if (carouselTrackEl && !isDraggingCarousel) {
-				currentPage = computeClosestPageFromScroll(carouselTrackEl.scrollLeft);
+			if (!isDraggingCarousel && !isDraggingSlider) {
+				syncCarouselScrollRatio();
 			}
 		});
+	}
+
+	// --- Draggable Slider Line Handlers ---
+	let sliderGrabOffsetPx = 0;
+
+	function applySliderPointerPosition(clientX: number) {
+		if (!sliderTrackEl || !carouselTrackEl) return;
+		const rect = sliderTrackEl.getBoundingClientRect();
+		const trackW = Math.max(1, rect.width);
+		const thumbW = (sliderThumbWidthPct / 100) * trackW;
+		const usableW = Math.max(1, trackW - thumbW);
+		const pointerX = clientX - rect.left;
+		const nextRatio = Math.min(1, Math.max(0, (pointerX - sliderGrabOffsetPx) / usableW));
+		carouselScrollRatio = nextRatio;
+		const maxScroll = Math.max(0, carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth);
+		carouselTrackEl.scrollLeft = nextRatio * maxScroll;
+	}
+
+	function onSliderPointerDown(e: PointerEvent) {
+		if (e.button !== 0 || !sliderTrackEl || !carouselTrackEl) return;
+		isDraggingSlider = true;
+		lastCarouselInteractionTime = performance.now();
+
+		const rect = sliderTrackEl.getBoundingClientRect();
+		const trackW = Math.max(1, rect.width);
+		const thumbW = (sliderThumbWidthPct / 100) * trackW;
+		const usableW = Math.max(1, trackW - thumbW);
+		const pointerX = e.clientX - rect.left;
+		const currentThumbLeft = carouselScrollRatio * usableW;
+
+		if (pointerX >= currentThumbLeft && pointerX <= currentThumbLeft + thumbW) {
+			sliderGrabOffsetPx = pointerX - currentThumbLeft;
+		} else {
+			sliderGrabOffsetPx = thumbW / 2;
+			applySliderPointerPosition(e.clientX);
+		}
+
+		try {
+			sliderTrackEl.setPointerCapture(e.pointerId);
+		} catch {
+			// Ignore capture errors
+		}
+	}
+
+	function onSliderPointerMove(e: PointerEvent) {
+		if (!isDraggingSlider) return;
+		lastCarouselInteractionTime = performance.now();
+		applySliderPointerPosition(e.clientX);
+	}
+
+	function onSliderPointerUp(e: PointerEvent) {
+		if (!isDraggingSlider) return;
+		isDraggingSlider = false;
+		lastCarouselInteractionTime = performance.now();
+		if (sliderTrackEl) {
+			try {
+				if (sliderTrackEl.hasPointerCapture(e.pointerId)) {
+					sliderTrackEl.releasePointerCapture(e.pointerId);
+				}
+			} catch {
+				// Ignore release errors
+			}
+		}
+	}
+
+	function onSliderKeyDown(e: KeyboardEvent) {
+		if (!carouselTrackEl) return;
+		let nextRatio: number;
+		if (e.key === 'ArrowRight') {
+			nextRatio = Math.min(1, carouselScrollRatio + 0.12);
+		} else if (e.key === 'ArrowLeft') {
+			nextRatio = Math.max(0, carouselScrollRatio - 0.12);
+		} else if (e.key === 'Home') {
+			nextRatio = 0;
+		} else if (e.key === 'End') {
+			nextRatio = 1;
+		} else {
+			return;
+		}
+		e.preventDefault();
+		lastCarouselInteractionTime = performance.now();
+		carouselScrollRatio = nextRatio;
+		const maxScroll = Math.max(0, carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth);
+		carouselTrackEl.scrollTo({ left: nextRatio * maxScroll, behavior: 'smooth' });
 	}
 
 	onMount(() => {
 		// Sync initial theme from external theme module
 		theme = getInitialTheme();
+		lastCarouselInteractionTime = performance.now();
 
 		// Initialize live timezone conversion clocks
 		updateClocks();
@@ -414,15 +467,12 @@
 			const next = w <= 640 ? 1 : w <= 960 ? 2 : 3;
 			if (next !== cardsPerPage) {
 				cardsPerPage = next;
-				currentPage = Math.min(
-					currentPage,
-					Math.max(0, Math.ceil(filteredProjects.length / next) - 1)
-				);
 			}
 		}
 
 		function handleScrollOrResize() {
 			updateResponsiveCardsPerPage();
+			syncCarouselScrollRatio();
 			const maxScroll = Math.max(
 				1,
 				document.documentElement.scrollHeight - document.documentElement.clientHeight - 2
@@ -437,27 +487,45 @@
 		window.addEventListener('scroll', handleScrollOrResize, { passive: true });
 		window.addEventListener('resize', handleScrollOrResize, { passive: true });
 
-		// --- Paginated Auto-Scroll Timer for Projects Gallery ---
+		// --- Delayed Auto-Scroll Timer for Projects Gallery (9.5s idle delay) ---
+		const AUTO_SCROLL_IDLE_MS = 9500;
 		let isCarouselVisible = false;
 
 		const autoAdvanceTimer = window.setInterval(() => {
+			const now = performance.now();
 			if (
 				!isCarouselVisible ||
 				isCarouselPaused ||
 				isDraggingCarousel ||
+				isDraggingSlider ||
 				activeModalProject ||
-				totalPages <= 1
+				!hasCarouselOverflow ||
+				!carouselTrackEl ||
+				now - lastCarouselInteractionTime < AUTO_SCROLL_IDLE_MS
 			) {
 				return;
 			}
-			const nextPage = (currentPage + 1) % totalPages;
-			goToPage(nextPage, true);
-		}, 4200);
+
+			const maxScroll = carouselTrackEl.scrollWidth - carouselTrackEl.clientWidth;
+			if (maxScroll <= 4) return;
+
+			const step = carouselTrackEl.clientWidth * 0.85;
+			const nextLeft =
+				carouselTrackEl.scrollLeft >= maxScroll - 12
+					? 0
+					: Math.min(maxScroll, carouselTrackEl.scrollLeft + step);
+
+			lastCarouselInteractionTime = now;
+			carouselTrackEl.scrollTo({ left: nextLeft, behavior: 'smooth' });
+		}, 1200);
 
 		const carouselObserver = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
 					isCarouselVisible = entry.isIntersecting;
+					if (entry.isIntersecting) {
+						lastCarouselInteractionTime = performance.now();
+					}
 				}
 			},
 			{ threshold: 0.1 }
@@ -934,20 +1002,28 @@
 				{/each}
 			</div>
 
-			{#if totalPages > 1}
-				<div class="carousel-pagination" role="tablist" aria-label="Project gallery pages">
-					{#each pageIndices as pageIdx (pageIdx)}
-						<button
-							type="button"
-							role="tab"
-							class="pagination-dot {currentPage === pageIdx ? 'is-active' : ''}"
-							aria-selected={currentPage === pageIdx}
-							aria-label="Go to project page {pageIdx + 1} of {totalPages}"
-							onclick={() => goToPage(pageIdx, true)}
-						>
-							<span class="dot-pill"></span>
-						</button>
-					{/each}
+			{#if hasCarouselOverflow}
+				<div
+					class="carousel-slider-track {isDraggingSlider ? 'is-dragging' : ''}"
+					bind:this={sliderTrackEl}
+					role="slider"
+					tabindex="0"
+					aria-label="Scroll projects gallery"
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={Math.round(carouselScrollRatio * 100)}
+					onpointerdown={onSliderPointerDown}
+					onpointermove={onSliderPointerMove}
+					onpointerup={onSliderPointerUp}
+					onpointercancel={onSliderPointerUp}
+					onkeydown={onSliderKeyDown}
+				>
+					<div class="slider-rail">
+						<div
+							class="slider-thumb"
+							style="width: {sliderThumbWidthPct}%; left: {sliderThumbLeftPct}%;"
+						></div>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -1732,43 +1808,51 @@
 		border-color: var(--accent-border);
 	}
 
-	.carousel-pagination {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-		padding-top: 0.15rem;
+	.carousel-slider-track {
+		position: relative;
+		width: 100%;
+		padding: 0.55rem 0;
+		user-select: none;
+		touch-action: none;
+		outline: none;
 	}
 
-	.pagination-dot {
-		padding: 0.4rem 0.25rem;
-		background: transparent;
-		border: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.dot-pill {
-		width: 8px;
-		height: 8px;
+	.slider-rail {
+		position: relative;
+		width: 100%;
+		height: 3px;
 		border-radius: 999px;
-		background: var(--border-strong);
+		background: var(--border-subtle);
+		overflow: visible;
 		transition:
-			width 0.26s cubic-bezier(0.22, 1, 0.36, 1),
-			background-color 0.22s ease,
-			box-shadow 0.22s ease;
+			height 0.18s ease,
+			background-color 0.18s ease;
 	}
 
-	.pagination-dot:hover .dot-pill {
-		background: var(--fg-secondary);
+	.carousel-slider-track:hover .slider-rail,
+	.carousel-slider-track.is-dragging .slider-rail,
+	.carousel-slider-track:focus-visible .slider-rail {
+		height: 5px;
+		background: var(--border-strong);
 	}
 
-	.pagination-dot.is-active .dot-pill {
-		width: 28px;
+	.slider-thumb {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		height: 100%;
+		border-radius: 999px;
 		background: var(--accent);
-		box-shadow: 0 0 12px var(--accent-glow);
+		box-shadow: 0 0 10px var(--accent-glow);
+		transition:
+			background-color 0.18s ease,
+			box-shadow 0.18s ease;
+	}
+
+	.carousel-slider-track:hover .slider-thumb,
+	.carousel-slider-track.is-dragging .slider-thumb,
+	.carousel-slider-track:focus-visible .slider-thumb {
+		box-shadow: 0 0 16px var(--accent-glow);
 	}
 
 	.card-thumb-wrap {
@@ -1887,6 +1971,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
+		font-size: 0.8rem;
 		color: var(--fg-secondary);
 		font-weight: 500;
 		min-width: 0;
@@ -1896,8 +1981,8 @@
 	}
 
 	.mini-client-logo {
-		width: 14px;
-		height: 14px;
+		width: 15px;
+		height: 15px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -2078,7 +2163,6 @@
 	.connect-subtitle {
 		font-size: 0.96rem;
 		color: var(--fg-secondary);
-		max-width: 54ch;
 		line-height: 1.55;
 	}
 
