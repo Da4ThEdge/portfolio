@@ -34,7 +34,7 @@
 		Briefcase,
 		MessageSquare,
 		Play,
-		Flame,
+		//Flame,
 		Terminal,
 		Clock,
 		Sparkles,
@@ -970,7 +970,7 @@
 						</div>
 						<div class="metric-divider"></div>
 						<div class="metric-item">
-							<span class="metric-val">2020–Now</span>
+							<span class="metric-val">2020 – Now</span>
 							<span class="metric-lbl">Remote Track</span>
 						</div>
 					</div>
@@ -1386,8 +1386,8 @@
 									<Terminal size={18} />
 								{:else if ch.id === 'x'}
 									<Globe size={18} />
-								{:else if ch.id === 'curseforge'}
-									<Flame size={18} />
+									<!--{:else if ch.id === 'curseforge'}
+									<Flame size={18} />-->
 								{:else}
 									<Play size={18} />
 								{/if}

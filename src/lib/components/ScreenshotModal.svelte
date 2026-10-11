@@ -11,7 +11,7 @@
 	let { project, onClose }: Props = $props();
 
 	const MIN_SCALE = 1;
-	const MAX_SCALE = 4;
+	const MAX_SCALE = 6;
 
 	let currentIndex = $state(0);
 	let scale = $state(1);
@@ -23,9 +23,37 @@
 	let stageEl: HTMLDivElement | undefined = $state();
 	let imgEl: HTMLImageElement | undefined = $state();
 
+	let stageW = $state(1280);
+	let stageH = $state(800);
+	let naturalW = $state(1920);
+	let naturalH = $state(1080);
+
 	const activePointers = new SvelteMap<number, { x: number; y: number }>();
 	const screenshots = $derived(project?.screenshots ?? []);
 	const zoomPercent = $derived(Math.round(scale * 100));
+
+	// Compute the exact 1x fitted dimensions inside the stage so zooming scales
+	// the actual layout width/height instead of stretching a low-res 1x mobile GPU texture.
+	const baseDims = $derived.by(() => {
+		const isMobile = stageW <= 640;
+		const maxW = isMobile ? stageW * 0.94 : Math.min(stageW * 0.88, 1440);
+		const maxH = isMobile ? stageH * 0.74 : stageH * 0.78;
+		if (naturalW <= 0 || naturalH <= 0 || maxW <= 0 || maxH <= 0) {
+			return { w: Math.max(1, maxW), h: Math.max(1, maxH) };
+		}
+		const ratio = Math.min(maxW / naturalW, maxH / naturalH);
+		return {
+			w: Math.max(1, naturalW * ratio),
+			h: Math.max(1, naturalH * ratio)
+		};
+	});
+
+	function syncNaturalDimensions() {
+		if (imgEl && imgEl.complete && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+			naturalW = imgEl.naturalWidth;
+			naturalH = imgEl.naturalHeight;
+		}
+	}
 
 	function resetZoom(animate = false) {
 		isGestureActive = !animate;
@@ -40,6 +68,32 @@
 		if (project) {
 			currentIndex = 0;
 			resetZoom(false);
+		}
+	});
+
+	// Track stage viewport dimensions for responsive 1x base sizing
+	$effect(() => {
+		const el = stageEl;
+		if (!el || !project) return;
+
+		const updateStageSize = () => {
+			const rect = el.getBoundingClientRect();
+			if (rect.width > 0 && rect.height > 0) {
+				stageW = rect.width;
+				stageH = rect.height;
+			}
+		};
+
+		updateStageSize();
+		const ro = new ResizeObserver(updateStageSize);
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+
+	// Sync natural dimensions when switching slides if image is already cached
+	$effect(() => {
+		if (screenshots[currentIndex]) {
+			syncNaturalDimensions();
 		}
 	});
 
@@ -72,13 +126,11 @@
 	});
 
 	function clampPan(nextPanX: number, nextPanY: number, forScale: number) {
-		if (forScale <= 1.001 || !imgEl) {
+		if (forScale <= 1.001) {
 			return { x: 0, y: 0 };
 		}
-		const baseW = imgEl.offsetWidth;
-		const baseH = imgEl.offsetHeight;
-		const maxPanX = ((forScale - 1) * baseW) / 2;
-		const maxPanY = ((forScale - 1) * baseH) / 2;
+		const maxPanX = ((forScale - 1) * baseDims.w) / 2;
+		const maxPanY = ((forScale - 1) * baseDims.h) / 2;
 		return {
 			x: Math.min(maxPanX, Math.max(-maxPanX, nextPanX)),
 			y: Math.min(maxPanY, Math.max(-maxPanY, nextPanY))
@@ -306,7 +358,8 @@
 					if (scale > 1.05) {
 						resetZoom(true);
 					} else {
-						zoomAtClientPoint(2.25, e.clientX, e.clientY, true);
+						const targetZoom = stageW <= 640 ? 3 : 2.25;
+						zoomAtClientPoint(targetZoom, e.clientX, e.clientY, true);
 					}
 				} else {
 					lastTapTime = now;
@@ -429,10 +482,12 @@
 				src={screenshots[currentIndex]}
 				alt="{project.title} screenshot {currentIndex + 1}"
 				draggable="false"
+				decoding="async"
+				onload={syncNaturalDimensions}
 				class="stage-image {isGestureActive ? 'no-transition' : ''}"
-				style="transform: translate3d({panX.toFixed(1)}px, {panY.toFixed(
+				style="width: {(baseDims.w * scale).toFixed(1)}px; height: {(baseDims.h * scale).toFixed(
 					1
-				)}px, 0) scale({scale.toFixed(4)});"
+				)}px; transform: translate({panX.toFixed(1)}px, {panY.toFixed(1)}px);"
 			/>
 
 			{#if screenshots.length > 1}
@@ -630,17 +685,17 @@
 	}
 
 	.stage-image {
-		max-width: min(88vw, 1440px);
-		max-height: 78dvh;
-		width: auto;
-		height: auto;
+		max-width: none;
+		max-height: none;
+		flex-shrink: 0;
 		object-fit: contain;
 		border-radius: 8px;
 		border: 1px solid var(--border-subtle);
 		box-shadow: 0 24px 64px -12px oklch(0% 0 0 / 0.75);
-		transform-origin: center center;
-		will-change: transform;
-		transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+		transition:
+			width 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+			height 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+			transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.stage-image.no-transition {
@@ -747,11 +802,6 @@
 
 		.lightbox-title {
 			font-size: 0.78rem;
-		}
-
-		.stage-image {
-			max-width: 94vw;
-			max-height: 74dvh;
 		}
 
 		.nav-arrow {
