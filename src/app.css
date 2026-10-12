@@ -24,8 +24,8 @@ html[data-theme='dark'] {
 	--accent-text: oklch(91% 0.096 180.426);
 	--accent-ink: oklch(14% 0.005 285.823);
 
-	--grid-line: oklch(100% 0 0 / 0.085);
-	--grid-dot: oklch(100% 0 0 / 0.24);
+	--grid-line: oklch(100% 0 0 / 0.058);
+	--grid-dot: oklch(100% 0 0 / 0.165);
 	--hud-stroke: oklch(100% 0 0 / 0.36);
 	--hud-text: oklch(100% 0 0 / 0.52);
 
@@ -65,8 +65,8 @@ html[data-theme='light'] {
 	--accent-text: oklch(38% 0.105 180.426);
 	--accent-ink: oklch(14% 0.005 285.823);
 
-	--grid-line: oklch(14% 0.005 285.823 / 0.095);
-	--grid-dot: oklch(14% 0.005 285.823 / 0.28);
+	--grid-line: oklch(14% 0.005 285.823 / 0.068);
+	--grid-dot: oklch(14% 0.005 285.823 / 0.19);
 	--hud-stroke: oklch(14% 0.005 285.823 / 0.35);
 	--hud-text: oklch(14% 0.005 285.823 / 0.52);
 

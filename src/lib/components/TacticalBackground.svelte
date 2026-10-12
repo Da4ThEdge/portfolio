@@ -50,7 +50,7 @@
 				y: row * 9.5 + (Math.random() * 2 - 1),
 				text: pick.text,
 				kind: pick.kind,
-				opacity: pick.kind === 'sym' ? 0.56 : 0.42
+				opacity: pick.kind === 'sym' ? 0.44 : 0.32
 			};
 
 			glyphs = [...glyphs.slice(-6), item];
@@ -87,7 +87,7 @@
 		window.addEventListener('mousemove', onMouseMove, { passive: true });
 
 		// Optical Focus-Hunting & 3D Background Parallax Engine
-		const BASE_STAGE_OPACITY = 0.65;
+		const BASE_STAGE_OPACITY = 0.48;
 		let isHunting = false;
 		let huntStartTime = 0;
 		let huntDuration = 3100;
@@ -129,7 +129,7 @@
 					const eased = Math.sin(t * (Math.PI / 2));
 					blur = eased * maxBlurTarget;
 					scale = 1.0 + eased * 0.034;
-					brightness = 100 + eased * 36;
+					brightness = 100 + eased * 32;
 					stageOpacity = BASE_STAGE_OPACITY + eased * (1 - BASE_STAGE_OPACITY);
 				} else if (p < 0.64) {
 					// Phase 2: Hunting Overshoot
@@ -138,7 +138,7 @@
 					blur = Math.max(1.2, (1 - t) * maxBlurTarget * 0.5 + overshootCurve * 5.2);
 					scale = 1.034 - t * 0.026 + overshootCurve * 0.008;
 					const normBlur = Math.min(1, blur / maxBlurTarget);
-					brightness = 100 + normBlur * 34;
+					brightness = 100 + normBlur * 30;
 					stageOpacity = BASE_STAGE_OPACITY + normBlur * (1 - BASE_STAGE_OPACITY);
 				} else if (p < 0.86) {
 					// Phase 3: Hunting Back-step correction
@@ -147,14 +147,14 @@
 					blur = Math.max(0.2, (1 - t) * 4.0 + microOsc);
 					scale = 1.008 - t * 0.008;
 					const normBlur = Math.min(1, blur / maxBlurTarget);
-					brightness = 100 + normBlur * 28;
+					brightness = 100 + normBlur * 26;
 					stageOpacity = BASE_STAGE_OPACITY + normBlur * (1 - BASE_STAGE_OPACITY);
 				} else {
 					// Phase 4: Final Pin-Point Lock
 					const t = (p - 0.86) / 0.14;
 					blur = (1 - t) * 0.6;
 					scale = 1.0;
-					brightness = 100 + (1 - t) * 6;
+					brightness = 100 + (1 - t) * 5;
 					stageOpacity = BASE_STAGE_OPACITY + (1 - t) * 0.06;
 				}
 			}
@@ -231,8 +231,8 @@
 				r="340"
 				fill="none"
 				stroke="currentColor"
-				stroke-opacity="0.28"
-				stroke-width="1.3"
+				stroke-opacity="0.21"
+				stroke-width="1.25"
 				stroke-dasharray="4 8"
 			/>
 			<circle
@@ -241,8 +241,8 @@
 				r="560"
 				fill="none"
 				stroke="currentColor"
-				stroke-opacity="0.22"
-				stroke-width="1.1"
+				stroke-opacity="0.16"
+				stroke-width="1"
 			/>
 			<circle
 				cx="960"
@@ -250,35 +250,35 @@
 				r="780"
 				fill="none"
 				stroke="currentColor"
-				stroke-opacity="0.17"
-				stroke-width="1.1"
+				stroke-opacity="0.12"
+				stroke-width="1"
 				stroke-dasharray="2 14"
 			/>
 
 			<!-- Wireframe Circuit Traces (45-deg tactical routing) -->
-			<g class="circuit-traces" stroke="currentColor" stroke-width="1.35" fill="none">
-				<path d="M 120 180 L 340 180 L 410 250 L 680 250" stroke-opacity="0.36" />
-				<circle cx="120" cy="180" r="3.2" fill="currentColor" fill-opacity="0.55" />
-				<circle cx="680" cy="250" r="3.2" fill="currentColor" fill-opacity="0.55" />
+			<g class="circuit-traces" stroke="currentColor" stroke-width="1.25" fill="none">
+				<path d="M 120 180 L 340 180 L 410 250 L 680 250" stroke-opacity="0.28" />
+				<circle cx="120" cy="180" r="3" fill="currentColor" fill-opacity="0.42" />
+				<circle cx="680" cy="250" r="3" fill="currentColor" fill-opacity="0.42" />
 
-				<path d="M 1800 220 L 1540 220 L 1460 300 L 1220 300" stroke-opacity="0.36" />
-				<circle cx="1800" cy="220" r="3.2" fill="currentColor" fill-opacity="0.55" />
-				<circle cx="1220" cy="300" r="3.2" fill="currentColor" fill-opacity="0.55" />
+				<path d="M 1800 220 L 1540 220 L 1460 300 L 1220 300" stroke-opacity="0.28" />
+				<circle cx="1800" cy="220" r="3" fill="currentColor" fill-opacity="0.42" />
+				<circle cx="1220" cy="300" r="3" fill="currentColor" fill-opacity="0.42" />
 
-				<path d="M 180 860 L 420 860 L 500 780 L 760 780 L 810 830" stroke-opacity="0.33" />
-				<circle cx="180" cy="860" r="3.2" fill="currentColor" fill-opacity="0.55" />
-				<circle cx="810" cy="830" r="3.2" fill="currentColor" fill-opacity="0.55" />
+				<path d="M 180 860 L 420 860 L 500 780 L 760 780 L 810 830" stroke-opacity="0.25" />
+				<circle cx="180" cy="860" r="3" fill="currentColor" fill-opacity="0.42" />
+				<circle cx="810" cy="830" r="3" fill="currentColor" fill-opacity="0.42" />
 
-				<path d="M 1740 840 L 1480 840 L 1410 770 L 1160 770" stroke-opacity="0.33" />
-				<circle cx="1740" cy="840" r="3.2" fill="currentColor" fill-opacity="0.55" />
-				<circle cx="1160" cy="770" r="3.2" fill="currentColor" fill-opacity="0.55" />
+				<path d="M 1740 840 L 1480 840 L 1410 770 L 1160 770" stroke-opacity="0.25" />
+				<circle cx="1740" cy="840" r="3" fill="currentColor" fill-opacity="0.42" />
+				<circle cx="1160" cy="770" r="3" fill="currentColor" fill-opacity="0.42" />
 
-				<path d="M 300 540 L 460 540 L 510 490 L 640 490" stroke-opacity="0.3" />
-				<path d="M 1620 540 L 1460 540 L 1410 590 L 1280 590" stroke-opacity="0.3" />
+				<path d="M 300 540 L 460 540 L 510 490 L 640 490" stroke-opacity="0.22" />
+				<path d="M 1620 540 L 1460 540 L 1410 590 L 1280 590" stroke-opacity="0.22" />
 			</g>
 
 			<!-- Subtle crosshair ticks at quadrants -->
-			<g stroke="currentColor" stroke-opacity="0.44" stroke-width="1.3">
+			<g stroke="currentColor" stroke-opacity="0.34" stroke-width="1.2">
 				<path d="M 475 540 H 485 M 480 535 V 545" />
 				<path d="M 1435 540 H 1445 M 1440 535 V 545" />
 				<path d="M 960 265 V 275 M 955 270 H 965" />
@@ -307,14 +307,14 @@
 		z-index: 0;
 		pointer-events: none;
 		transform-origin: center center;
-		color: var(--fg-primary);
+		color: var(--fg-secondary);
 		overflow: hidden;
 	}
 
 	.tactical-elements-stage {
 		position: absolute;
 		inset: 0;
-		opacity: 0.65;
+		opacity: 0.48;
 	}
 
 	.grid-plane {
@@ -354,7 +354,7 @@
 		font-family: var(--font-mono);
 		font-size: 0.72rem;
 		letter-spacing: 0.08em;
-		color: var(--fg-primary);
+		color: var(--fg-secondary);
 		white-space: nowrap;
 		user-select: none;
 		animation: glyph-lifecycle 4.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;

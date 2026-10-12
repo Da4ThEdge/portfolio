@@ -38,7 +38,11 @@
 		Terminal,
 		Clock,
 		Sparkles,
-		Funnel
+		Funnel,
+		Copy,
+		Check,
+		FileUser,
+		Download
 	} from '@lucide/svelte';
 
 	// --- Loading & Preload State ---
@@ -59,9 +63,9 @@
 
 	// --- Timezone Conversion State ---
 	let myTimeText = $state('8:51 pm');
-	let myEmoji = $state('🌙');
+	let myIsDay = $state(false);
 	let visitorTimeText = $state('8:51 pm');
-	let visitorEmoji = $state('🌙');
+	let visitorIsDay = $state(false);
 	let visitorGmtLabel = $state('GMT+6');
 
 	// --- Projects Filtering, Drag/Swipe Carousel, Slider Line & Modal State ---
@@ -99,11 +103,33 @@
 	);
 	const expertiseThumbLeftPct = $derived(expertiseScrollRatio * (100 - expertiseThumbWidthPct));
 
+	// --- Connect Section Discord Copy & Reveal State ---
+	let isDiscordHovered = $state(false);
+	let isDiscordClicked = $state(false);
+	let isDiscordCopied = $state(false);
+	let discordCopyTimeout: number | undefined;
+
+	async function handleCopyDiscord(username: string) {
+		isDiscordClicked = true;
+		try {
+			await navigator.clipboard.writeText(username);
+		} catch {
+			// Ignore clipboard write errors
+		}
+		isDiscordCopied = true;
+		if (discordCopyTimeout !== undefined) {
+			window.clearTimeout(discordCopyTimeout);
+		}
+		discordCopyTimeout = window.setTimeout(() => {
+			isDiscordCopied = false;
+		}, 2200);
+	}
+
 	const currentYear = new Date().getFullYear();
 
-	function getDayNightEmoji(hour24: number): string {
-		// Google Calendar style: Sun between 6:00 AM and 5:59 PM, Moon between 6:00 PM and 5:59 AM
-		return hour24 >= 6 && hour24 < 18 ? '☀️' : '🌙';
+	function isDayTime(hour24: number): boolean {
+		// Day between 6:00 AM and 5:59 PM, Night between 6:00 PM and 5:59 AM
+		return hour24 >= 6 && hour24 < 18;
 	}
 
 	function formatTimeAndHour(date: Date, timeZone?: string): { formatted: string; hour24: number } {
@@ -149,11 +175,11 @@
 		const now = new Date();
 		const ash = formatTimeAndHour(now, HOME_BASE.timeZone);
 		myTimeText = ash.formatted;
-		myEmoji = getDayNightEmoji(ash.hour24);
+		myIsDay = isDayTime(ash.hour24);
 
 		const visitor = formatTimeAndHour(now);
 		visitorTimeText = visitor.formatted;
-		visitorEmoji = getDayNightEmoji(visitor.hour24);
+		visitorIsDay = isDayTime(visitor.hour24);
 		visitorGmtLabel = formatVisitorGmtOffset(now);
 	}
 
@@ -788,6 +814,7 @@
 		return () => {
 			window.clearInterval(clockTimer);
 			window.clearInterval(autoAdvanceTimer);
+			if (discordCopyTimeout !== undefined) window.clearTimeout(discordCopyTimeout);
 			window.removeEventListener('scroll', handleScrollOrResize);
 			window.removeEventListener('resize', handleScrollOrResize);
 			if (scrollRafId) cancelAnimationFrame(scrollRafId);
@@ -931,17 +958,29 @@
 					mechanics and high-performance web systems for global studios.
 				</p>
 
-				<!-- Timezone Conversion Widget with GCal-style Sun/Moon Emojis -->
+				<!-- Timezone Conversion Widget with Day/Night Icons -->
 				<div class="timezone-pill" aria-live="polite">
 					<span class="tz-icon">
 						<Clock size={15} />
 					</span>
 					<p class="tz-text">
 						My <strong class="tz-time">{myTimeText}</strong>
-						<span class="gcal-emoji" aria-hidden="true">{myEmoji}</span>
+						<span class="gcal-emoji" aria-hidden="true">
+							{#if myIsDay}
+								<Sun size={14} />
+							{:else}
+								<Moon size={14} />
+							{/if}
+						</span>
 						in <span class="tz-loc">{HOME_BASE.city}</span> is your
 						<strong class="tz-time">{visitorTimeText}</strong>
-						<span class="gcal-emoji" aria-hidden="true">{visitorEmoji}</span>
+						<span class="gcal-emoji" aria-hidden="true">
+							{#if visitorIsDay}
+								<Sun size={14} />
+							{:else}
+								<Moon size={14} />
+							{/if}
+						</span>
 						<span class="tz-gmt">{visitorGmtLabel}</span>
 					</p>
 				</div>
@@ -1359,45 +1398,98 @@
 
 			<div class="connect-channels-grid">
 				{#each SOCIAL_CHANNELS as ch (ch.id)}
-					<a
-						href={ch.href || undefined}
-						target={ch.href ? '_blank' : undefined}
-						rel={ch.href ? 'noreferrer noopener nofollow' : undefined}
-						class="channel-card tactical-frame"
-						aria-label={ch.label}
-						onclick={(e) => {
-							if (!ch.href) e.preventDefault();
-						}}
-					>
-						<div class="channel-top">
-							<span class="channel-code">{ch.code}</span>
-							<ArrowUpRight size={15} class="channel-arrow" />
-						</div>
-
-						<div class="channel-main">
-							<span class="channel-icon-box">
-								{#if ch.id === 'email'}
-									<Mail size={18} />
-								{:else if ch.id === 'discord'}
-									<MessageSquare size={18} />
-								{:else if ch.id === 'linkedin'}
-									<Briefcase size={18} />
-								{:else if ch.id === 'github'}
-									<Terminal size={18} />
-								{:else if ch.id === 'x'}
-									<Globe size={18} />
-									<!--{:else if ch.id === 'curseforge'}
-									<Flame size={18} />-->
+					{#if ch.copyValue}
+						{@const showDiscordUser = isDiscordHovered || isDiscordClicked || isDiscordCopied}
+						<button
+							type="button"
+							class="channel-card tactical-frame {isDiscordCopied ? 'is-copied' : ''}"
+							aria-label="Copy {ch.label} username {ch.copyValue} to clipboard"
+							onmouseenter={() => (isDiscordHovered = true)}
+							onmouseleave={() => {
+								isDiscordHovered = false;
+								isDiscordClicked = false;
+							}}
+							onfocus={() => (isDiscordHovered = true)}
+							onblur={() => {
+								isDiscordHovered = false;
+								isDiscordClicked = false;
+							}}
+							onclick={() => handleCopyDiscord(ch.copyValue!)}
+						>
+							<div class="channel-top">
+								<span class="channel-code">{isDiscordCopied ? 'COPIED // CLIPBOARD' : ch.code}</span
+								>
+								{#if isDiscordCopied}
+									<Check size={15} class="channel-arrow" />
 								{:else}
-									<Play size={18} />
+									<Copy size={15} class="channel-arrow" />
 								{/if}
-							</span>
-							<div class="channel-text">
-								<span class="channel-name">{ch.label}</span>
-								<span class="channel-handle">{ch.handle}</span>
 							</div>
-						</div>
-					</a>
+
+							<div class="channel-main">
+								<span class="channel-icon-box">
+									<MessageSquare size={18} />
+								</span>
+								<div class="channel-text">
+									<span class="channel-name">{ch.label}</span>
+									<span class="channel-handle {showDiscordUser ? 'is-username-visible' : ''}">
+										{#if isDiscordCopied}
+											{ch.copyValue} (Copied!)
+										{:else if showDiscordUser}
+											{ch.copyValue}
+										{:else}
+											{ch.handle}
+										{/if}
+									</span>
+								</div>
+							</div>
+						</button>
+					{:else}
+						<a
+							href={ch.href || undefined}
+							download={ch.download ? '' : undefined}
+							target={ch.href.startsWith('http') ? '_blank' : undefined}
+							rel="external noreferrer noopener nofollow"
+							class="channel-card tactical-frame"
+							aria-label={ch.label}
+							onclick={(e) => {
+								if (!ch.href) e.preventDefault();
+							}}
+						>
+							<div class="channel-top">
+								<span class="channel-code">{ch.code}</span>
+								{#if ch.download}
+									<Download size={15} class="channel-arrow" />
+								{:else}
+									<ArrowUpRight size={15} class="channel-arrow" />
+								{/if}
+							</div>
+
+							<div class="channel-main">
+								<span class="channel-icon-box">
+									{#if ch.id === 'email'}
+										<Mail size={18} />
+									{:else if ch.id === 'linkedin'}
+										<Briefcase size={18} />
+									{:else if ch.id === 'github'}
+										<Terminal size={18} />
+									{:else if ch.id === 'x'}
+										<Globe size={18} />
+										<!--{:else if ch.id === 'curseforge'}
+										<Flame size={18} />-->
+									{:else if ch.id === 'resume'}
+										<FileUser size={18} />
+									{:else}
+										<Play size={18} />
+									{/if}
+								</span>
+								<div class="channel-text">
+									<span class="channel-name">{ch.label}</span>
+									<span class="channel-handle">{ch.handle}</span>
+								</div>
+							</div>
+						</a>
+					{/if}
 				{/each}
 			</div>
 		</div>
@@ -1809,10 +1901,11 @@
 	}
 
 	.gcal-emoji {
-		display: inline-block;
-		margin: 0 0.15rem;
-		font-size: 1rem;
-		vertical-align: -1px;
+		display: inline-flex;
+		align-items: center;
+		margin: 0 0.12rem;
+		color: var(--accent-text);
+		vertical-align: -2px;
 	}
 
 	.tz-loc {
@@ -2518,11 +2611,14 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.9rem;
+		width: 100%;
 		padding: 1.1rem 1.2rem;
 		border-radius: 12px;
 		background: var(--bg-surface);
 		border: 1px solid var(--border-subtle);
 		text-decoration: none;
+		text-align: left;
+		font: inherit;
 		color: var(--fg-primary);
 		transition:
 			border-color 0.2s ease,
@@ -2530,7 +2626,8 @@
 			transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.channel-card:hover {
+	.channel-card:hover,
+	.channel-card.is-copied {
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		transform: translateY(-3px);
@@ -2544,6 +2641,11 @@
 		font-size: 0.62rem;
 		letter-spacing: 0.08em;
 		color: var(--fg-muted);
+	}
+
+	.channel-card.is-copied .channel-code {
+		color: var(--accent-text);
+		font-weight: 600;
 	}
 
 	.channel-main {
@@ -2569,7 +2671,8 @@
 			border-color 0.2s ease;
 	}
 
-	.channel-card:hover .channel-icon-box {
+	.channel-card:hover .channel-icon-box,
+	.channel-card.is-copied .channel-icon-box {
 		background: var(--accent);
 		color: var(--accent-ink);
 		border-color: var(--accent);
@@ -2591,6 +2694,12 @@
 		font-family: var(--font-mono);
 		font-size: 0.68rem;
 		color: var(--fg-secondary);
+		transition: color 0.18s ease;
+	}
+
+	.channel-handle.is-username-visible {
+		color: var(--accent-text);
+		font-weight: 600;
 	}
 
 	/* --- Footer --- */
@@ -2732,6 +2841,11 @@
 
 		.channel-handle {
 			display: none;
+		}
+
+		.channel-handle.is-username-visible {
+			display: block;
+			font-size: 0.62rem;
 		}
 
 		.footer-inner {
