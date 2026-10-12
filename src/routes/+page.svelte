@@ -256,7 +256,17 @@
 	let dragStartScrollLeft = 0;
 	let hasDraggedCarousel = false;
 	let suppressCardClick = false;
+	let lastModalCloseTime = 0;
 	let scrollSyncRaf = 0;
+
+	function handleCloseModal() {
+		lastModalCloseTime = performance.now();
+		suppressCardClick = true;
+		window.setTimeout(() => {
+			suppressCardClick = false;
+		}, 400);
+		activeModalProject = null;
+	}
 
 	function onCarouselPointerDown(e: PointerEvent) {
 		if (e.button !== 0 || !carouselTrackEl) return;
@@ -331,7 +341,7 @@
 	}
 
 	function onCarouselClickCapture(e: MouseEvent) {
-		if (suppressCardClick) {
+		if (suppressCardClick || performance.now() - lastModalCloseTime < 400) {
 			e.preventDefault();
 			e.stopPropagation();
 			suppressCardClick = false;
@@ -885,33 +895,37 @@
 				href="#intro"
 				class="nav-link {activeSection === 'intro' ? 'is-active' : ''}"
 				aria-current={activeSection === 'intro' ? 'true' : 'false'}
+				onclick={() => (activeSection = 'intro')}
 			>
 				<span class="nav-idx">01</span>
-				<span>Intro</span>
+				<span class="nav-label-wrap"><span class="nav-label">Intro</span></span>
 			</a>
 			<a
 				href="#projects"
 				class="nav-link {activeSection === 'projects' ? 'is-active' : ''}"
 				aria-current={activeSection === 'projects' ? 'true' : 'false'}
+				onclick={() => (activeSection = 'projects')}
 			>
 				<span class="nav-idx">02</span>
-				<span>Projects</span>
+				<span class="nav-label-wrap"><span class="nav-label">Projects</span></span>
 			</a>
 			<a
 				href="#expertise"
 				class="nav-link {activeSection === 'expertise' ? 'is-active' : ''}"
 				aria-current={activeSection === 'expertise' ? 'true' : 'false'}
+				onclick={() => (activeSection = 'expertise')}
 			>
 				<span class="nav-idx">03</span>
-				<span>Expertise</span>
+				<span class="nav-label-wrap"><span class="nav-label">Expertise</span></span>
 			</a>
 			<a
 				href="#connect"
 				class="nav-link {activeSection === 'connect' ? 'is-active' : ''}"
 				aria-current={activeSection === 'connect' ? 'true' : 'false'}
+				onclick={() => (activeSection = 'connect')}
 			>
 				<span class="nav-idx">04</span>
-				<span>Connect</span>
+				<span class="nav-label-wrap"><span class="nav-label">Connect</span></span>
 			</a>
 		</nav>
 
@@ -960,29 +974,53 @@
 
 				<!-- Timezone Conversion Widget with Day/Night Icons -->
 				<div class="timezone-pill" aria-live="polite">
-					<span class="tz-icon">
-						<Clock size={15} />
-					</span>
-					<p class="tz-text">
-						My <strong class="tz-time">{myTimeText}</strong>
-						<span class="gcal-emoji" aria-hidden="true">
-							{#if myIsDay}
-								<Sun size={14} />
-							{:else}
-								<Moon size={14} />
-							{/if}
-						</span>
-						in <span class="tz-loc">{HOME_BASE.city}</span> is your
-						<strong class="tz-time">{visitorTimeText}</strong>
-						<span class="gcal-emoji" aria-hidden="true">
-							{#if visitorIsDay}
-								<Sun size={14} />
-							{:else}
-								<Moon size={14} />
-							{/if}
-						</span>
-						<span class="tz-gmt">{visitorGmtLabel}</span>
-					</p>
+					<div class="tz-node">
+						<div class="tz-node-head">
+							<span class="tz-icon" aria-hidden="true">
+								<Clock size={13} />
+							</span>
+							<span>MY TIME</span>
+						</div>
+						<div class="tz-node-val">
+							<strong class="tz-time">{myTimeText}</strong>
+							<span class="gcal-emoji" aria-hidden="true">
+								{#if myIsDay}
+									<Sun size={15} />
+								{:else}
+									<Moon size={15} />
+								{/if}
+							</span>
+						</div>
+						<div class="tz-node-sub">
+							<span class="tz-loc">{HOME_BASE.city}</span>
+						</div>
+					</div>
+
+					<div class="tz-sync-bridge" aria-hidden="true">
+						<span class="tz-bridge-line"></span>
+						<span class="tz-bridge-badge">IS YOUR</span>
+						<span class="tz-bridge-line"></span>
+					</div>
+
+					<div class="tz-node tz-node-visitor">
+						<div class="tz-node-head">
+							<span>YOUR TIME</span>
+							<span class="tz-gmt">{visitorGmtLabel}</span>
+						</div>
+						<div class="tz-node-val">
+							<strong class="tz-time">{visitorTimeText}</strong>
+							<span class="gcal-emoji" aria-hidden="true">
+								{#if visitorIsDay}
+									<Sun size={15} />
+								{:else}
+									<Moon size={15} />
+								{/if}
+							</span>
+						</div>
+						<div class="tz-node-sub">
+							<span>Local Timezone</span>
+						</div>
+					</div>
 				</div>
 
 				<!-- Quick Navigation CTAs & Key Metrics -->
@@ -1171,7 +1209,10 @@
 						<button
 							type="button"
 							class="project-card glass-surface tactical-frame"
-							onclick={() => (activeModalProject = project)}
+							onclick={() => {
+								if (performance.now() - lastModalCloseTime < 400) return;
+								activeModalProject = project;
+							}}
 							aria-label="Open {project.title} screenshot gallery ({project.screenshots
 								.length} screenshots)"
 						>
@@ -1510,7 +1551,7 @@
 </main>
 
 <!-- Multi-Screenshot Lightbox Modal -->
-<ScreenshotModal project={activeModalProject} onClose={() => (activeModalProject = null)} />
+<ScreenshotModal project={activeModalProject} onClose={handleCloseModal} />
 
 <style>
 	/* --- 1. Fast-Paint Centered Loader & FLIP Docking --- */
@@ -1661,7 +1702,9 @@
 			opacity 0.2s ease,
 			color 0.2s ease,
 			background-color 0.2s ease,
-			border-color 0.2s ease;
+			border-color 0.2s ease,
+			padding 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+			gap 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.nav-link:hover {
@@ -1681,10 +1724,16 @@
 		font-size: 0.68rem;
 		font-weight: 600;
 		color: var(--fg-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.nav-link.is-active .nav-idx {
 		color: var(--accent-text);
+	}
+
+	.nav-label-wrap {
+		display: inline-flex;
+		align-items: center;
 	}
 
 	.theme-toggle-btn {
@@ -1717,16 +1766,16 @@
 		}
 
 		.top-navbar {
-			padding: 0.36rem 0.48rem;
-			gap: 0.25rem;
+			padding: 0.34rem 0.45rem;
+			gap: 0.35rem;
 			border-radius: 12px;
 		}
 
 		.navbar-logo-btn {
-			padding: 0.18rem 0.24rem;
+			padding: 0.16rem 0.2rem;
 		}
 
-		.navbar-logo-btn :global(.animated-logo-root) {
+		.navbar-logo-btn :global(.logo-wrapper) {
 			width: 28px !important;
 			height: 28px !important;
 		}
@@ -1735,25 +1784,60 @@
 			display: none;
 		}
 
+		/* Tactical Active-Node Expandable Pill Bar for Narrow Mobile Screens */
 		.navbar-links {
-			flex: 1;
+			flex: 0 1 auto;
 			justify-content: center;
-			gap: 0.12rem;
-		}
-
-		.nav-idx {
-			display: none;
+			gap: 0.14rem;
+			padding: 0.16rem;
+			border-radius: 9px;
+			background: var(--bg-chip);
+			border: 1px solid var(--border-hairline);
+			max-width: calc(100% - 76px);
+			overflow: hidden;
 		}
 
 		.nav-link {
-			padding: 0.34rem 0.44rem;
+			padding: 0.28rem 0.42rem;
+			gap: 0;
 			font-size: 0.68rem;
-			letter-spacing: 0.01em;
+			letter-spacing: 0.02em;
 			border-radius: 6px;
+			opacity: 0.75;
+		}
+
+		.nav-link.is-active {
+			padding: 0.28rem 0.54rem;
+			gap: 0.3rem;
+			opacity: 1;
+		}
+
+		.nav-idx {
+			display: inline-block;
+			font-size: 0.64rem;
+			font-weight: 700;
+		}
+
+		.nav-label-wrap {
+			display: inline-grid;
+			grid-template-columns: 0fr;
+			opacity: 0;
+			transition:
+				grid-template-columns 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+				opacity 0.2s ease;
+		}
+
+		.nav-link.is-active .nav-label-wrap {
+			grid-template-columns: 1fr;
+			opacity: 1;
+		}
+
+		.nav-label {
+			overflow: hidden;
 		}
 
 		.theme-toggle-btn {
-			padding: 0.38rem;
+			padding: 0.36rem;
 		}
 
 		.theme-label {
@@ -1761,10 +1845,19 @@
 		}
 	}
 
-	@media (max-width: 380px) {
+	@media (max-width: 360px) {
 		.nav-link {
-			padding: 0.3rem 0.32rem;
+			padding: 0.24rem 0.34rem;
 			font-size: 0.62rem;
+		}
+
+		.nav-link.is-active {
+			padding: 0.24rem 0.44rem;
+			gap: 0.24rem;
+		}
+
+		.nav-idx {
+			font-size: 0.6rem;
 		}
 	}
 
@@ -1868,19 +1961,43 @@
 		max-width: 62ch;
 	}
 
-	/* Timezone Conversion Pill */
+	/* Timezone Conversion Pill (Dual-Node Tactical Time Sync Grid) */
 	.timezone-pill {
-		display: inline-flex;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 		align-items: center;
-		gap: 0.65rem;
-		padding: 0.7rem 1.1rem;
-		border-radius: 12px;
+		gap: 1.5rem;
+		width: min(100%, 460px);
+		padding: 0.85rem 1.25rem;
+		border-radius: 13px;
 		background: var(--bg-surface);
 		border: 1px solid var(--border-strong);
 		font-family: var(--font-mono);
-		font-size: clamp(0.76rem, 1.4vw, 0.88rem);
 		color: var(--fg-secondary);
 		box-shadow: inset 3px 0 0 0 var(--accent);
+	}
+
+	.tz-node {
+		display: flex;
+		flex-direction: column;
+		gap: 0.24rem;
+		min-width: 0;
+	}
+
+	.tz-node-visitor {
+		align-items: flex-end;
+		text-align: right;
+	}
+
+	.tz-node-head {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.38rem;
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		color: var(--fg-muted);
+		white-space: nowrap;
 	}
 
 	.tz-icon {
@@ -1890,8 +2007,13 @@
 		flex-shrink: 0;
 	}
 
-	.tz-text {
-		line-height: 1.45;
+	.tz-node-val {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 1.08rem;
+		line-height: 1.25;
+		white-space: nowrap;
 	}
 
 	.tz-time {
@@ -1903,9 +2025,17 @@
 	.gcal-emoji {
 		display: inline-flex;
 		align-items: center;
-		margin: 0 0.12rem;
 		color: var(--accent-text);
-		vertical-align: -2px;
+	}
+
+	.tz-node-sub {
+		font-family: var(--font-sans);
+		font-size: 0.8rem;
+		color: var(--fg-secondary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
 	}
 
 	.tz-loc {
@@ -1913,18 +2043,48 @@
 		text-decoration: underline;
 		text-decoration-color: var(--border-strong);
 		text-underline-offset: 3px;
+		white-space: nowrap;
 	}
 
 	.tz-gmt {
 		display: inline-block;
-		margin-left: 0.25rem;
-		padding: 0.1rem 0.42rem;
+		margin-left: 0.12rem;
+		padding: 0.08rem 0.42rem;
 		border-radius: 5px;
 		background: var(--accent-soft);
 		border: 1px solid var(--accent-border);
 		color: var(--fg-primary);
-		font-size: 0.76em;
+		font-size: 0.94em;
 		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.tz-sync-bridge {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.24rem;
+		align-self: stretch;
+	}
+
+	.tz-bridge-line {
+		width: 1px;
+		flex: 1;
+		min-height: 8px;
+		background: var(--border-subtle);
+	}
+
+	.tz-bridge-badge {
+		font-size: 0.58rem;
+		font-weight: 700;
+		letter-spacing: 0.09em;
+		padding: 0.14rem 0.46rem;
+		border-radius: 999px;
+		background: var(--bg-chip);
+		border: 1px solid var(--border-subtle);
+		color: var(--accent-text);
+		white-space: nowrap;
 	}
 
 	.intro-footer-row {
@@ -2480,7 +2640,9 @@
 	@media (max-width: 640px) {
 		.expertise-card {
 			flex: 0 0 100%;
-			padding: 1.2rem;
+			padding: 0.85rem 0.95rem;
+			gap: 0.5rem;
+			border-radius: 13px;
 		}
 	}
 
@@ -2763,9 +2925,55 @@
 			gap: 1.15rem;
 		}
 
+		/* Mobile Proportions for Dual-Node Tactical Time Sync Card */
 		.timezone-pill {
-			padding: 0.55rem 0.8rem;
-			font-size: 0.74rem;
+			width: 100%;
+			padding: 0.62rem 0.78rem;
+			gap: 0.55rem;
+			border-radius: 11px;
+		}
+
+		.tz-node {
+			gap: 0.16rem;
+		}
+
+		.tz-node-head {
+			gap: 0.32rem;
+			font-size: 0.58rem;
+			letter-spacing: 0.07em;
+		}
+
+		.tz-node-head .tz-gmt {
+			margin-left: 0.1rem;
+			padding: 0.06rem 0.34rem;
+			font-size: 0.95em;
+		}
+
+		.tz-node-val {
+			gap: 0.22rem;
+			font-size: 0.86rem;
+		}
+
+		.tz-node-sub {
+			font-size: 0.68rem;
+		}
+
+		.tz-node-sub .tz-loc {
+			text-underline-offset: 2px;
+		}
+
+		.tz-sync-bridge {
+			gap: 0.18rem;
+		}
+
+		.tz-bridge-line {
+			min-height: 6px;
+		}
+
+		.tz-bridge-badge {
+			font-size: 0.5rem;
+			letter-spacing: 0.08em;
+			padding: 0.1rem 0.34rem;
 		}
 
 		.intro-metrics {
@@ -2782,6 +2990,11 @@
 			font-size: 0.58rem;
 		}
 
+		.section-header {
+			margin-bottom: 1rem;
+			gap: 0.3rem;
+		}
+
 		.client-filter-bar {
 			padding: 0.65rem 0.85rem;
 			gap: 0.6rem;
@@ -2790,6 +3003,49 @@
 		.filter-chip {
 			padding: 0.38rem 0.68rem;
 			font-size: 0.73rem;
+		}
+
+		/* Vertically Compact Technical Expertise Cards for Standard Phone Screens */
+		.expertise-gallery-shell {
+			gap: 0.65rem;
+		}
+
+		.expertise-card-top {
+			padding-bottom: 0.45rem;
+		}
+
+		.domain-code {
+			font-size: 0.6rem;
+		}
+
+		.domain-icon {
+			width: 28px;
+			height: 28px;
+			border-radius: 7px;
+		}
+
+		.domain-title {
+			font-size: 1.1rem;
+			line-height: 1.2;
+		}
+
+		.domain-skill-list {
+			gap: 0.35rem;
+		}
+
+		.skill-row {
+			padding: 0.4rem 0.65rem;
+			border-radius: 8px;
+		}
+
+		.skill-name {
+			font-size: 0.78rem;
+			gap: 0.34rem;
+		}
+
+		.skill-tag {
+			font-size: 0.54rem;
+			padding: 0.06rem 0.32rem;
 		}
 
 		.connect-shell {

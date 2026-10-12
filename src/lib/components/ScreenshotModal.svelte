@@ -58,6 +58,7 @@
 	function resetZoom(animate = false) {
 		isGestureActive = !animate;
 		isDraggingImage = false;
+		clearPendingLightDismiss();
 		activePointers.clear();
 		scale = 1;
 		panX = 0;
@@ -69,6 +70,9 @@
 			currentIndex = 0;
 			resetZoom(false);
 		}
+		return () => {
+			clearPendingLightDismiss();
+		};
 	});
 
 	// Track stage viewport dimensions for responsive 1x base sizing
@@ -232,6 +236,16 @@
 	let lastTapTime = 0;
 	let lastTapX = 0;
 	let lastTapY = 0;
+	let pendingLightDismiss = false;
+	let lightDismissFallbackTimer: number | undefined;
+
+	function clearPendingLightDismiss() {
+		pendingLightDismiss = false;
+		if (lightDismissFallbackTimer !== undefined) {
+			window.clearTimeout(lightDismissFallbackTimer);
+			lightDismissFallbackTimer = undefined;
+		}
+	}
 
 	function getTwoPointers() {
 		const pts = Array.from(activePointers.values());
@@ -245,6 +259,7 @@
 
 	function onStagePointerDown(e: PointerEvent) {
 		if (e.button !== 0 && e.pointerType === 'mouse') return;
+		clearPendingLightDismiss();
 		// Ignore clicks on floating buttons/thumbnails inside stage
 		const targetEl = e.target as HTMLElement | null;
 		if (targetEl?.closest('button')) return;
@@ -343,8 +358,16 @@
 					Boolean(pointerDownTarget.closest('.stage-image'));
 
 				if (!clickedOnImage) {
-					// Light-dismiss when clicking empty stage area outside the screenshot
-					onClose();
+					// Defer unmounting until the synthesized click event fires on the stage
+					// so mobile browsers don't dispatch the tap onto project cards underneath.
+					pendingLightDismiss = true;
+					lightDismissFallbackTimer = window.setTimeout(() => {
+						if (pendingLightDismiss) {
+							pendingLightDismiss = false;
+							lightDismissFallbackTimer = undefined;
+							onClose();
+						}
+					}, 120);
 					return;
 				}
 
@@ -378,6 +401,18 @@
 					}
 				}
 			}
+		}
+	}
+
+	function onStageClick(e: MouseEvent) {
+		const targetEl = e.target as HTMLElement | null;
+		if (targetEl?.closest('button')) return;
+
+		if (pendingLightDismiss) {
+			e.preventDefault();
+			e.stopPropagation();
+			clearPendingLightDismiss();
+			onClose();
 		}
 	}
 </script>
@@ -447,7 +482,10 @@
 				<button
 					type="button"
 					class="ctrl-btn close-btn"
-					onclick={onClose}
+					onclick={(e) => {
+						e.stopPropagation();
+						onClose();
+					}}
 					aria-label="Close screenshot viewer"
 					title="Close (Esc)"
 				>
@@ -458,6 +496,7 @@
 
 		<!-- Full-Viewport Interactive Stage (Scroll / Pinch to Zoom, Drag to Pan) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="lightbox-stage {scale > 1 ? 'is-zoomed' : ''} {isDraggingImage ? 'is-dragging' : ''}"
 			bind:this={stageEl}
@@ -465,6 +504,7 @@
 			onpointermove={onStagePointerMove}
 			onpointerup={onStagePointerUp}
 			onpointercancel={onStagePointerUp}
+			onclick={onStageClick}
 		>
 			{#if screenshots.length > 1}
 				<button
