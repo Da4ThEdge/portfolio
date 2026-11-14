@@ -1205,7 +1205,7 @@
 							</div>
 						</a>
 					{:else if project.screenshots && project.screenshots.length > 0}
-						<!-- Multi-Screenshot Showcase Card (Project) -->
+						<!-- Project card with screenshot gallery -->
 						<button
 							type="button"
 							class="project-card glass-surface tactical-frame"
@@ -1267,7 +1267,7 @@
 							</div>
 						</button>
 					{:else}
-						<!-- Internal Project Card (Project) -->
+						<!-- Project card without an external link or gallery -->
 						<article class="project-card glass-surface tactical-frame">
 							<div class="card-thumb-wrap">
 								<img
