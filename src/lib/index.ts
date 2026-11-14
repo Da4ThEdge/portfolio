@@ -1,2 +1,2 @@
-export * from './data/portfolio.js';
+export * from './data/content.js';
 export * from './theme.js';

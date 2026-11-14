@@ -18,7 +18,7 @@
 		getInitialTheme,
 		toggleThemeMode,
 		type ThemeMode,
-		type ClientId,
+		type ProjectClientId,
 		type ProjectItem
 	} from '#lib';
 	import {
@@ -42,7 +42,8 @@
 		Copy,
 		Check,
 		FileUser,
-		Download
+		Download,
+		CircleHelp
 	} from '@lucide/svelte';
 
 	// --- Loading & Preload State ---
@@ -69,7 +70,7 @@
 	let visitorGmtLabel = $state('GMT+6');
 
 	// --- Projects Filtering, Drag/Swipe Carousel, Slider Line & Modal State ---
-	let selectedClient = $state<ClientId | null>(null);
+	let selectedClient = $state<ProjectClientId | null>(null);
 	let activeModalProject = $state<ProjectItem | null>(null);
 	let carouselTrackEl: HTMLDivElement | undefined = $state();
 	let sliderTrackEl: HTMLDivElement | undefined = $state();
@@ -235,7 +236,7 @@
 		return bestOffset;
 	}
 
-	function handleSelectClient(clientId: ClientId | null) {
+	function handleSelectClient(clientId: ProjectClientId | null) {
 		selectedClient = clientId;
 		carouselScrollRatio = 0;
 		lastCarouselInteractionTime = performance.now();
@@ -244,7 +245,7 @@
 		}
 	}
 
-	function getProjectCountForClient(clientId: ClientId): number {
+	function getProjectCountForClient(clientId: ProjectClientId): number {
 		return PROJECTS.filter((p) => p.clientId === clientId).length;
 	}
 
@@ -1068,7 +1069,11 @@
 		</div>
 
 		<!-- 3D Interactive Wireframe Globe (D3.js) -->
-		<GlobeViz {selectedClient} onSelectClient={handleSelectClient} {worldTopology} />
+		<GlobeViz
+			selectedClient={selectedClient === 'confidential' ? null : selectedClient}
+			onSelectClient={handleSelectClient}
+			{worldTopology}
+		/>
 
 		<!-- Client Filter Bar (Synchronized with 3D Globe Selection) -->
 		<div
@@ -1114,6 +1119,17 @@
 						<span class="chip-count">{getProjectCountForClient(client.id)}</span>
 					</button>
 				{/each}
+				<button
+					type="button"
+					class="filter-chip {selectedClient === 'confidential' ? 'is-active' : ''}"
+					onclick={() =>
+						handleSelectClient(selectedClient === 'confidential' ? null : 'confidential')}
+					aria-pressed={selectedClient === 'confidential'}
+				>
+					<CircleHelp size={16} />
+					<span>Confidential</span>
+					<span class="chip-count">{getProjectCountForClient('confidential')}</span>
+				</button>
 			</div>
 		</div>
 
@@ -1190,7 +1206,7 @@
 										{/if}
 										<span>{project.clientName}</span>
 									</div>
-									<div class="card-date">{project.dateLabel}</div>
+									{#if project.dateLabel}<div class="card-date">{project.dateLabel}</div>{/if}
 								</div>
 
 								<p class="card-publisher">Publisher: {project.publisher}</p>
@@ -1250,7 +1266,7 @@
 										{/if}
 										<span>{project.clientName}</span>
 									</div>
-									<div class="card-date">{project.dateLabel}</div>
+									{#if project.dateLabel}<div class="card-date">{project.dateLabel}</div>{/if}
 								</div>
 
 								{#if project.description}
@@ -1270,13 +1286,17 @@
 						<!-- Project card without an external link or gallery -->
 						<article class="project-card glass-surface tactical-frame">
 							<div class="card-thumb-wrap">
-								<img
-									src={project.thumbnail}
-									alt="{project.title} system preview"
-									loading="lazy"
-									draggable="false"
-									class="card-thumb"
-								/>
+								{#if project.clientId === 'confidential'}
+									<div class="confidential-thumb">Confidential</div>
+								{:else}
+									<img
+										src={project.thumbnail}
+										alt="{project.title} system preview"
+										loading="lazy"
+										draggable="false"
+										class="card-thumb"
+									/>
+								{/if}
 							</div>
 
 							<div class="card-body">
@@ -1294,7 +1314,7 @@
 										{/if}
 										<span>{project.clientName}</span>
 									</div>
-									<div class="card-date">{project.dateLabel}</div>
+									{#if project.dateLabel}<div class="card-date">{project.dateLabel}</div>{/if}
 								</div>
 
 								{#if project.description}
@@ -2484,6 +2504,18 @@
 	.projects-carousel-viewport:not(.is-dragging) .project-card:hover .external-hover-badge,
 	.project-card:focus-visible .external-hover-badge {
 		transform: translateY(0);
+	}
+
+	.confidential-thumb {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		background: var(--bg-base);
+		color: var(--fg-primary);
+		font-family: var(--font-display);
+		font-size: clamp(1.25rem, 2vw, 1.75rem);
+		font-weight: 700;
 	}
 
 	.card-status-badge {
